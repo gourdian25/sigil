@@ -205,7 +205,7 @@ Contributions to Sigil are welcome! If you'd like to contribute, please follow t
 
 ## License
 
-Sigil is open-source and licensed under the **MIT License**. See the [LICENSE](https://github.com/gourdian25/sigil/blob/main/LICENSE) file for more details.
+Sigil is open-source and licensed under the **MIT License**. See the [LICENSE](https://github.com/gourdian25/sigil/blob/master/LICENSE) file for more details.
 
 ---
 
