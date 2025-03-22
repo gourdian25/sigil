@@ -49,6 +49,7 @@ INTERNAL_DEFAULTS=(
   ["ORGANIZATION"]="My Company Inc."
   ["JWT_DIR"]="keys"
   ["KEY_SIZE"]="2048"
+  ["ADDITIONAL_DNS"]="example.com,api.example.com"
 )
 
 # Function to create default config file from internal defaults
@@ -142,15 +143,9 @@ load_defaults() {
     load_config_file "$DEFAULT_CONFIG_FILE"
   # If no config files exist, use internal defaults and offer to create default config
   else
-    gum style --margin "1" --foreground 7 --italic "No configuration file found. Using internal defaults."
+    # This message should show after the welcome banner
+    CONFIG_STATUS="No configuration file found. Using internal defaults."
     set_internal_defaults
-    
-    if $INTERACTIVE; then
-      gum style --margin "1" --foreground 7 "Would you like to create a default configuration file for future use?"
-      if gum confirm; then
-        create_default_config "$DEFAULT_CONFIG_FILE"
-      fi
-    fi
   fi
 }
 
@@ -176,7 +171,16 @@ prompt_or_default() {
       eval "$var_name=\$input"
     fi
   else
+    # In non-interactive mode, just use the default silently
     eval "$var_name=\$default_value"
+  fi
+}
+
+# Show info text only in interactive mode
+show_info() {
+  local info_text="$1"
+  if $INTERACTIVE; then
+    gum style --margin "1" --foreground 7 --italic "$info_text"
   fi
 }
 
@@ -211,12 +215,24 @@ TERMINAL_WIDTH=$(( $(tput cols) - 4 ))
 # WELCOME MESSAGE
 #################################################
 # Welcome message with thick border and full-width layout
-WELCOME_MSG=$(gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --align center "Welcome to $(gum style --foreground 212 'Sigil')")
-DESCRIPTION_MSG=$(gum style --margin "1" --width $TERMINAL_WIDTH --align center "Your go-to tool for generating SSL certificates and JWT RSA keys with ease.")
+WELCOME_MSG=$(gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --align center "Welcome to $(gum style --foreground 212 'Sigil')
+Your go-to tool for generating SSL certificates and JWT RSA keys with ease.")
 
 # Display the welcome message
-echo -e "\n$WELCOME_MSG"
-echo -e "$DESCRIPTION_MSG\n"
+echo -e "\n$WELCOME_MSG\n"
+
+# Show configuration status if it exists
+if [ -n "$CONFIG_STATUS" ]; then
+  gum style --margin "1" --foreground 7 --italic "$CONFIG_STATUS"
+fi
+
+# Offer to create a default config file in interactive mode if no file exists
+if $INTERACTIVE && [ -n "$CONFIG_STATUS" ]; then
+  gum style --margin "1" --foreground 7 "Would you like to create a default configuration file for future use?"
+  if gum confirm; then
+    create_default_config "$DEFAULT_CONFIG_FILE"
+  fi
+fi
 
 #################################################
 # USER INPUT: SELECT WHAT TO GENERATE
@@ -231,19 +247,19 @@ OPTIONS=$(gum choose --no-limit --header "What would you like to generate?" "SSL
 # Ask for directories based on the selected options
 if grep -q "SSL Certificates" <<< "$OPTIONS"; then
   prompt_or_default "Where do you want to store the generated SSL certificates?" SSL_DIR
-  gum style --margin "1" --foreground 7 --italic "This directory will contain the CA certificate, server certificate, and keys."
+  show_info "This directory will contain the CA certificate, server certificate, and keys."
   
   # Create the SSL directory if it doesn't exist
   gum spin --spinner dot --title "Creating SSL directory..." -- mkdir -p "${SSL_DIR}"
   
   # Ask for the server Common Name (CN) for SSL certificate generation
   prompt_or_default "The server Common Name (CN) is used for SSL certificate generation." SERVER_CN
-  gum style --margin "1" --foreground 7 --italic "This should match your server's hostname or domain name."
+  show_info "This should match your server's hostname or domain name."
 fi
 
 if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
   prompt_or_default "Where do you want to store the JWT RSA keys?" JWT_DIR
-  gum style --margin "1" --foreground 7 --italic "This directory will contain the private and public keys for JWT token signing."
+  show_info "This directory will contain the private and public keys for JWT token signing."
   
   # Create the JWT directory if it doesn't exist
   gum spin --spinner dot --title "Creating JWT directory..." -- mkdir -p "${JWT_DIR}"
@@ -264,13 +280,16 @@ if grep -q "SSL Certificates" <<< "$OPTIONS"; then
   prompt_or_default "Enter the city where your organization is located:" LOCALITY
   prompt_or_default "Enter your organization or company name:" ORGANIZATION
   
-  # Additional DNS names for the certificate
-  gum style --margin "1" --foreground 212 "Additional DNS names for the certificate:"
-  gum style --margin "1" --foreground 7 --italic "These are additional hostnames that this certificate will be valid for."
-  gum style --margin "1" --foreground 7 --italic "Your certificate will already be valid for '$SERVER_CN' and '127.0.0.1'."
-  gum style --margin "1" --foreground 7 "Enter additional domain names separated by commas (e.g., example.com,api.example.com)"
-  
-  ADDITIONAL_DNS=$(gum input --placeholder "Additional DNS names (optional)")
+  # Additional DNS names for the certificate - only prompt in interactive mode
+  if $INTERACTIVE; then
+    gum style --margin "1" --foreground 212 "Additional DNS names for the certificate:"
+    gum style --margin "1" --foreground 7 --italic "These are additional hostnames that this certificate will be valid for."
+    gum style --margin "1" --foreground 7 --italic "Your certificate will already be valid for '$SERVER_CN' and '127.0.0.1'."
+    gum style --margin "1" --foreground 7 "Enter additional domain names separated by commas (e.g., example.com,api.example.com)"
+    
+    ADDITIONAL_DNS=$(gum input --placeholder "Additional DNS names (optional)")
+  fi
+  # In non-interactive mode, use default value from config or internal defaults
   
   # Create DNS entries for the config
   DNS_ENTRIES="DNS.1 = ${SERVER_CN}"$'\n'"DNS.2 = 127.0.0.1"
@@ -360,13 +379,16 @@ if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
   RSA_PRIVATE_KEY="${JWT_DIR}/rsa_private.pem"
   RSA_PUBLIC_KEY="${JWT_DIR}/rsa_public.pem"
 
-  # Ask for key size with explanation
+  # Ask for key size with explanation - Only show the explanation in interactive mode
   gum style --margin "1" --foreground 99 "Select the RSA key size:"
-  gum style --margin "1" --foreground 7 --italic "The key size determines the security level of your JWT tokens."
-  gum style --margin "1" --foreground 7 --italic "Larger keys provide more security but may have performance impact."
-  gum style --margin "1" --foreground 7 "2048 bits: Standard security, good performance"
-  gum style --margin "1" --foreground 7 "3072 bits: Enhanced security, slightly lower performance"
-  gum style --margin "1" --foreground 7 "4096 bits: Maximum security, may impact performance"
+  
+  if $INTERACTIVE; then
+    gum style --margin "1" --foreground 7 --italic "The key size determines the security level of your JWT tokens."
+    gum style --margin "1" --foreground 7 --italic "Larger keys provide more security but may have performance impact."
+    gum style --margin "1" --foreground 7 "2048 bits: Standard security, good performance"
+    gum style --margin "1" --foreground 7 "3072 bits: Enhanced security, slightly lower performance"
+    gum style --margin "1" --foreground 7 "4096 bits: Maximum security, may impact performance"
+  fi
   
   prompt_or_default "Select RSA key size:" KEY_SIZE
 
@@ -401,7 +423,7 @@ fi
 # SAVE DEFAULTS FOR FUTURE USE
 #################################################
 if $INTERACTIVE; then
-  gum style --margin "1" --foreground 7 "Would you like to create a default configuration file for future use?"
+  gum style --margin "1" --foreground 7 "Would you like to save the current settings as default configuration for future use?"
   if gum confirm; then
     local save_path
     if [ -n "$CONFIG_FILE" ]; then
@@ -426,6 +448,7 @@ LOCALITY="$LOCALITY"
 ORGANIZATION="$ORGANIZATION"
 JWT_DIR="$JWT_DIR"
 KEY_SIZE="$KEY_SIZE"
+ADDITIONAL_DNS="$ADDITIONAL_DNS"
 EOF
     
     gum style --margin "1" --foreground 10 "✓ Default configuration saved to $save_path"
@@ -475,3 +498,5 @@ NAME=$(whoami)
 GOODBYE=$(gum style --margin "1" --border thick --padding "1 2" --border-foreground 57 --width $TERMINAL_WIDTH --align center \
     "Thanks for using $(gum style --foreground 212 'Sigil'), $(gum style --foreground 212 "$NAME")!")
 echo -e "\n$GOODBYE"
+
+
