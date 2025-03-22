@@ -284,40 +284,40 @@ fi
 #################################################
 # FINAL SUMMARY
 #################################################
-SUMMARY_TITLE=$(gum style --foreground 10 --align center "All operations completed successfully!")
+# Create a temporary file for the summary content
+TEMP_SUMMARY_FILE=$(mktemp)
 
-# Create summary content
-SUMMARY_CONTENT=""
+# Add title to the temporary file
+echo "$(gum style --foreground 10 --align center "All operations completed successfully!")" > "$TEMP_SUMMARY_FILE"
+echo "" >> "$TEMP_SUMMARY_FILE"  # Add blank line
 
 # Add SSL summary if SSL was generated
 if grep -q "SSL Certificates" <<< "$OPTIONS"; then
-    SSL_SUMMARY=$(
-        gum style --foreground 212 --align center "SSL Certificates (HTTPs/gRPC)"
-        echo ""
-        gum style "• Server Certificate: \"${SSL_DIR}/server.crt\""
-        gum style "• Server Private Key: \"${SSL_DIR}/server.pem\""
-    )
-    SUMMARY_CONTENT+="$SSL_SUMMARY"
+    echo "$(gum style --foreground 212 --align center "SSL Certificates (HTTPs/gRPC)")" >> "$TEMP_SUMMARY_FILE"
+    echo "" >> "$TEMP_SUMMARY_FILE"
+    echo "$(gum style "• Server Certificate: \"${SSL_DIR}/server.crt\"")" >> "$TEMP_SUMMARY_FILE"
+    echo "$(gum style "• Server Private Key: \"${SSL_DIR}/server.pem\"")" >> "$TEMP_SUMMARY_FILE"
 fi
 
 # Add separator if both were generated
 if grep -q "SSL Certificates" <<< "$OPTIONS" && grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
-    SUMMARY_CONTENT+="\n\n"
+    echo "" >> "$TEMP_SUMMARY_FILE"
+    echo "" >> "$TEMP_SUMMARY_FILE"
 fi
 
 # Add JWT summary if JWT was generated
 if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
-    JWT_SUMMARY=$(
-        gum style --foreground 99 --align center "JWT Token Signing"
-        echo ""
-        gum style "• Private Key Path: \"${RSA_PRIVATE_KEY}\""
-        gum style "• Public Key Path: \"${RSA_PUBLIC_KEY}\""
-    )
-    SUMMARY_CONTENT+="$JWT_SUMMARY"
+    echo "$(gum style --foreground 99 --align center "JWT Token Signing")" >> "$TEMP_SUMMARY_FILE"
+    echo "" >> "$TEMP_SUMMARY_FILE"
+    echo "$(gum style "• Private Key Path: \"${RSA_PRIVATE_KEY}\"")" >> "$TEMP_SUMMARY_FILE"
+    echo "$(gum style "• Public Key Path: \"${RSA_PUBLIC_KEY}\"")" >> "$TEMP_SUMMARY_FILE"
 fi
 
-# Display the final summary in a full-width box with thick border
-gum style --margin "1" --border thick --padding "1 2" --border-foreground 57 --width $TERMINAL_WIDTH "$SUMMARY_TITLE\n\n$SUMMARY_CONTENT"
+# Display the final summary in a full-width box with thick border using the content from the temp file
+gum style --margin "1" --border thick --padding "1 2" --border-foreground 57 --width $TERMINAL_WIDTH "$(cat "$TEMP_SUMMARY_FILE")"
+
+# Clean up the temporary file
+rm "$TEMP_SUMMARY_FILE"
 
 # Final goodbye
 NAME=$(whoami)
