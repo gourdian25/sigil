@@ -28,6 +28,10 @@ This tool is perfect for developers who need to quickly set up secure communicat
   - Guided prompts for configuring certificates and keys.
   - Real-time feedback and progress indicators.
 
+- **Cross-Platform Support**:
+  - Works on Linux, macOS, and other Unix-like systems.
+  - Automatically detects and installs dependencies.
+
 ---
 
 ## Dependencies
@@ -39,6 +43,10 @@ Before using Sigil, ensure the following dependencies are installed:
    - Install on Ubuntu/Debian:
      ```bash
      sudo apt install openssl
+     ```
+   - Install on CentOS/RHEL:
+     ```bash
+     sudo yum install openssl
      ```
    - Install on macOS:
      ```bash
@@ -57,7 +65,10 @@ Before using Sigil, ensure the following dependencies are installed:
 
 ## Installation
 
-You can install Sigil directly using a single command. However, the installation method depends on your shell:
+You can install Sigil directly using a single command. The installation script will:
+1. Download the latest version of Sigil.
+2. Install dependencies (if not already installed).
+3. Make Sigil executable and place it in a directory included in your `$PATH` (e.g., `/usr/local/bin`).
 
 ### For Bash or Zsh
 Run the following command in your terminal:
@@ -90,11 +101,6 @@ If the above methods don't work, you can manually download and install Sigil:
    ```bash
    ./install.sh
    ```
-
-This script will:
-1. Download the latest version of Sigil.
-2. Make it executable.
-3. Place it in a directory included in your `$PATH` (e.g., `/usr/local/bin`).
 
 ---
 
@@ -182,6 +188,42 @@ If you generate RSA keys, the following files will be created in the specified d
 
 - `rsa_private.pem`: Private key for signing JWT tokens (keep secure).
 - `rsa_public.pem`: Public key for verifying JWT tokens.
+
+---
+
+## Advanced Usage
+
+### Interactive Mode
+
+You can run Sigil in interactive mode by specifying options directly. For example:
+
+```bash
+sigil -i
+```
+
+This will ask users for values for all prompts.
+
+### Custom Configuration File
+
+You can specify a custom configuration file using the `-c` option:
+
+```bash
+sigil -c /path/to/config.conf
+```
+
+The configuration file should contain key-value pairs for all required settings. For example:
+
+```ini
+SSL_DIR="ssl"
+SERVER_CN="localhost"
+COUNTRY="US"
+STATE="California"
+LOCALITY="San Francisco"
+ORGANIZATION="My Company Inc."
+JWT_DIR="keys"
+KEY_SIZE="2048"
+ADDITIONAL_DNS="example.com,api.example.com"
+```
 
 ---
 

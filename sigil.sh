@@ -9,7 +9,8 @@
 # - https://github.com/grpc/grpc-java/tree/master/examples/example-tls
 # Enhanced with Gum CLI (https://github.com/charmbracelet/gum) for a delightful user experience.
 
-set -e  # Exit on any error to ensure the script stops if something goes wrong
+# Exit on any error to ensure the script stops if something goes wrong
+set -e
 
 #################################################
 # INTERACTIVE MODE AND DEFAULTS
@@ -18,7 +19,7 @@ INTERACTIVE=false
 DEFAULT_CONFIG_FILE="$HOME/.config/sigil/sigil.defaults.conf"
 CONFIG_FILE=""
 
-# Help text
+# Display help text
 show_help() {
   echo "Usage: $0 [options]"
   echo "Options:"
@@ -63,6 +64,7 @@ create_default_config() {
   echo "# Generated on: $(date)" >> "$config_path"
   echo "" >> "$config_path"
   
+  # Write each default key-value pair to the config file
   for key in "${!INTERNAL_DEFAULTS[@]}"; do
     echo "$key=\"${INTERNAL_DEFAULTS[$key]}\"" >> "$config_path"
   done
@@ -78,6 +80,7 @@ verify_config() {
   local config_file="$1"
   local missing=false
   
+  # Check if each required key exists in the config file
   for key in "${!INTERNAL_DEFAULTS[@]}"; do
     if ! grep -q "^$key=" "$config_file" && ! grep -q "^$key=\"" "$config_file"; then
       if $INTERACTIVE; then
@@ -87,6 +90,7 @@ verify_config() {
     fi
   done
   
+  # Handle missing configurations
   if $missing; then
     if $INTERACTIVE; then
       gum style --margin "1" --foreground 9 "Configuration file is incomplete. Would you like to:"
