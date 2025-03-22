@@ -41,21 +41,21 @@ if ! command -v gum &> /dev/null; then
 fi
 
 #################################################
+# TERMINAL WIDTH SETUP
+#################################################
+# Calculate the width of the terminal (slightly reduced to prevent wrapping)
+TERMINAL_WIDTH=$(( $(tput cols) - 4 ))
+
+#################################################
 # WELCOME MESSAGE
 #################################################
-# Calculate the width of the terminal
-TERMINAL_WIDTH=$(tput cols)
-BOX_WIDTH=$((TERMINAL_WIDTH / 2))
+# Welcome message with thick border and full-width layout
+WELCOME_MSG=$(gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --align center "Welcome to $(gum style --foreground 212 'Sigil')")
+DESCRIPTION_MSG=$(gum style --margin "1" --width $TERMINAL_WIDTH --align center "Your go-to tool for generating SSL certificates and JWT RSA keys with ease.")
 
-# Welcome message with double border and centered text
-WELCOME_MSG=$(gum style --margin "1" --border double --padding "1 2" --border-foreground 212 --width $BOX_WIDTH --align center "Welcome to $(gum style --foreground 212 'Sigil')")
-DESCRIPTION_MSG=$(gum style --margin "1" --width $BOX_WIDTH --align center "Your go-to tool for generating SSL certificates and JWT RSA keys with ease.")
-
-# Combine the welcome message and description
-WELCOME_BOX=$(gum join --vertical "$WELCOME_MSG" "$DESCRIPTION_MSG")
-
-# Display the welcome box
-echo -e "\n$WELCOME_BOX\n"
+# Display the welcome message
+echo -e "\n$WELCOME_MSG"
+echo -e "$DESCRIPTION_MSG\n"
 
 #################################################
 # USER INPUT: SELECT WHAT TO GENERATE
@@ -98,7 +98,7 @@ fi
 # PART 1: GENERATE SSL CERTIFICATES
 #################################################
 if grep -q "SSL Certificates" <<< "$OPTIONS"; then
-    gum style --margin "1" --border normal --padding "1 2" --border-foreground 99 "$(gum style --foreground 99 'SSL Certificate Generation')"
+    gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH "$(gum style --foreground 99 --align center 'SSL Certificate Generation')"
 
     # Interactive certificate configuration
     gum style --margin "1" --foreground 99 "Let's configure your SSL certificate details:"
@@ -137,8 +137,8 @@ if grep -q "SSL Certificates" <<< "$OPTIONS"; then
     
     # Additional DNS names for the certificate
     gum style --margin "1" --foreground 212 "Additional DNS names for the certificate:"
-    gum style --margin "1" --foreground 7 "These are additional hostnames that this certificate will be valid for."
-    gum style --margin "1" --foreground 7 "Your certificate will already be valid for '$SERVER_CN' and '127.0.0.1'."
+    gum style --margin "1" --foreground 7 --italic "These are additional hostnames that this certificate will be valid for."
+    gum style --margin "1" --foreground 7 --italic "Your certificate will already be valid for '$SERVER_CN' and '127.0.0.1'."
     gum style --margin "1" --foreground 7 "Enter additional domain names separated by commas (e.g., example.com,api.example.com)"
     
     ADDITIONAL_DNS=$(gum input --placeholder "Additional DNS names (optional)")
@@ -218,29 +218,26 @@ EOF"
 
     gum style --margin "1" --foreground 10 "✓ SSL certificate generation completed successfully"
     
-    # Show SSL files information
-    gum style --margin "1" --foreground 212 --italic "SSL files generated in '${SSL_DIR}' directory:"
-    SSL_FILES=(
-        "ca.key: Certificate Authority private key (keep secure)"
-        "ca.crt: Certificate Authority trust certificate"
-        "server.key: Server private key, password protected"
-        "server.csr: Server certificate signing request"
-        "server.crt: Server certificate signed by the CA"
-        "server.pem: Server private key in PEM format for gRPC"
+    # Show SSL files information in a full-width box
+    SSL_INFO=$(
+        gum style --italic "SSL files generated in '${SSL_DIR}' directory:"
+        for FILE in "ca.key: Certificate Authority private key (keep secure)" \
+                    "ca.crt: Certificate Authority trust certificate" \
+                    "server.key: Server private key, password protected" \
+                    "server.csr: Server certificate signing request" \
+                    "server.crt: Server certificate signed by the CA" \
+                    "server.pem: Server private key in PEM format for gRPC"; do
+            gum style "  • ${FILE}"
+        done
     )
-    
-    echo ""
-    for FILE in "${SSL_FILES[@]}"; do
-        gum style --margin "1" "  • ${FILE}"
-    done
-    echo ""
+    gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$SSL_INFO"
 fi
 
 #################################################
 # PART 2: GENERATE RSA KEYS FOR JWT
 #################################################
 if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
-    gum style --margin "1" --border normal --padding "1 2" --border-foreground 99 "$(gum style --foreground 99 'JWT RSA Key Generation')"
+    gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH "$(gum style --foreground 99 --align center 'JWT RSA Key Generation')"
 
     # Define output file paths
     RSA_PRIVATE_KEY="${JWT_DIR}/rsa_private.pem"
@@ -273,52 +270,57 @@ if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
 
     gum style --margin "1" --foreground 10 "✓ JWT RSA key generation completed successfully"
     
-    # Show JWT files information
-    gum style --margin "1" --foreground 212 --italic "JWT RSA files generated in '${JWT_DIR}' directory:"
-    gum style --margin "1" "  • Private Key: ${RSA_PRIVATE_KEY}"
-    gum style --margin "1" "    (Keep this secure! Used to sign your JWT tokens)"
-    gum style --margin "1" "  • Public Key: ${RSA_PUBLIC_KEY}"
-    gum style --margin "1" "    (Share this with services that need to verify JWT tokens)"
-    echo ""
+    # Show JWT files information in a full-width box
+    JWT_INFO=$(
+        gum style --italic "JWT RSA files generated in '${JWT_DIR}' directory:"
+        gum style "  • Private Key: ${RSA_PRIVATE_KEY}"
+        gum style "    (Keep this secure! Used to sign your JWT tokens)"
+        gum style "  • Public Key: ${RSA_PUBLIC_KEY}"
+        gum style "    (Share this with services that need to verify JWT tokens)"
+    )
+    gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$JWT_INFO"
 fi
 
 #################################################
 # FINAL SUMMARY
 #################################################
-SUMMARY_TITLE=$(gum style --margin "1" --foreground 10 "All operations completed successfully!")
+SUMMARY_TITLE=$(gum style --foreground 10 --align center "All operations completed successfully!")
 
-# Create SSL summary box if SSL was generated
+# Create summary content
+SUMMARY_CONTENT=""
+
+# Add SSL summary if SSL was generated
 if grep -q "SSL Certificates" <<< "$OPTIONS"; then
-    SSL_SUMMARY=$(gum style --margin "1" --padding "1 2" --border normal --border-foreground 99 \
-    "$(gum style --foreground 212 'SSL Certificates (HTTPs/gRPC)')
-    
-• Server Certificate: \"${SSL_DIR}/server.crt\"
-• Server Private Key: \"${SSL_DIR}/server.pem\"")
+    SSL_SUMMARY=$(
+        gum style --foreground 212 --align center "SSL Certificates (HTTPs/gRPC)"
+        echo ""
+        gum style "• Server Certificate: \"${SSL_DIR}/server.crt\""
+        gum style "• Server Private Key: \"${SSL_DIR}/server.pem\""
+    )
+    SUMMARY_CONTENT+="$SSL_SUMMARY"
 fi
 
-# Create JWT summary box if JWT was generated
+# Add separator if both were generated
+if grep -q "SSL Certificates" <<< "$OPTIONS" && grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
+    SUMMARY_CONTENT+="\n\n"
+fi
+
+# Add JWT summary if JWT was generated
 if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
-    JWT_SUMMARY=$(gum style --margin "1" --padding "1 2" --border normal --border-foreground 212 \
-    "$(gum style --foreground 99 'JWT Token Signing')
-    
-• Private Key Path: \"${RSA_PRIVATE_KEY}\"
-• Public Key Path: \"${RSA_PUBLIC_KEY}\"")
+    JWT_SUMMARY=$(
+        gum style --foreground 99 --align center "JWT Token Signing"
+        echo ""
+        gum style "• Private Key Path: \"${RSA_PRIVATE_KEY}\""
+        gum style "• Public Key Path: \"${RSA_PUBLIC_KEY}\""
+    )
+    SUMMARY_CONTENT+="$JWT_SUMMARY"
 fi
 
-# Join the summary boxes horizontally or vertically based on terminal width
-if [[ $(tput cols) -gt 100 ]] && [[ -n "$SSL_SUMMARY" ]] && [[ -n "$JWT_SUMMARY" ]]; then
-    echo -e "\n$SUMMARY_TITLE\n"
-    gum join --horizontal "$SSL_SUMMARY" "$JWT_SUMMARY"
-else
-    echo -e "\n$SUMMARY_TITLE\n"
-    [[ -n "$SSL_SUMMARY" ]] && echo -e "$SSL_SUMMARY\n"
-    [[ -n "$JWT_SUMMARY" ]] && echo -e "$JWT_SUMMARY\n"
-fi
+# Display the final summary in a full-width box with thick border
+gum style --margin "1" --border thick --padding "1 2" --border-foreground 57 --width $TERMINAL_WIDTH "$SUMMARY_TITLE\n\n$SUMMARY_CONTENT"
 
 # Final goodbye
 NAME=$(whoami)
-GOODBYE=$(gum style --margin "1" --border double --padding "1 2" --border-foreground 57 --width $BOX_WIDTH --align center \
+GOODBYE=$(gum style --margin "1" --border thick --padding "1 2" --border-foreground 57 --width $TERMINAL_WIDTH --align center \
     "Thanks for using $(gum style --foreground 212 'Sigil'), $(gum style --foreground 212 "$NAME")!")
 echo -e "\n$GOODBYE"
-
-
