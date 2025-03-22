@@ -42,7 +42,7 @@ done
 declare -A INTERNAL_DEFAULTS
 INTERNAL_DEFAULTS=(
   ["SSL_DIR"]="ssl"
-  ["SERVER_CN"]="example.com"
+  ["SERVER_CN"]="localhost"
   ["COUNTRY"]="IN"
   ["STATE"]="Karnataka"
   ["LOCALITY"]="Bengaluru"
@@ -284,54 +284,6 @@ if grep -q "SSL Certificates" <<< "$OPTIONS"; then
     done
   fi
   
-  # Save current values as defaults for next time
-  gum confirm "Save these certificate details as defaults for future use?" && {
-    local save_path
-    if [ -n "$CONFIG_FILE" ]; then
-      save_path="$CONFIG_FILE"
-    else
-      save_path="$DEFAULT_CONFIG_FILE"
-    fi
-    
-    # Create the config directory if it doesn't exist
-    mkdir -p "$(dirname "$save_path")"
-    
-    # If the file exists, update it; otherwise create it
-    if [ -f "$save_path" ]; then
-      # Update existing settings in the config file
-      sed -i.bak -e "s/^COUNTRY=.*$/COUNTRY=\"$COUNTRY\"/" \
-                 -e "s/^STATE=.*$/STATE=\"$STATE\"/" \
-                 -e "s/^LOCALITY=.*$/LOCALITY=\"$LOCALITY\"/" \
-                 -e "s/^ORGANIZATION=.*$/ORGANIZATION=\"$ORGANIZATION\"/" \
-                 -e "s/^SERVER_CN=.*$/SERVER_CN=\"$SERVER_CN\"/" \
-                 -e "s/^SSL_DIR=.*$/SSL_DIR=\"$SSL_DIR\"/" "$save_path"
-      # Remove backup file
-      rm -f "${save_path}.bak"
-      
-      # Add any missing settings
-      for key in COUNTRY STATE LOCALITY ORGANIZATION SERVER_CN SSL_DIR; do
-        if ! grep -q "^$key=" "$save_path" && ! grep -q "^$key=\"" "$save_path"; then
-          eval "echo \"$key=\\\"\$$key\\\"\" >> \"$save_path\""
-        fi
-      done
-    else
-      # Create a new config file
-      cat > "$save_path" << EOF
-# Sigil configuration
-# Generated on: $(date)
-
-COUNTRY="$COUNTRY"
-STATE="$STATE"
-LOCALITY="$LOCALITY"
-ORGANIZATION="$ORGANIZATION"
-SERVER_CN="$SERVER_CN"
-SSL_DIR="$SSL_DIR"
-EOF
-    fi
-    
-    gum style --margin "1" --foreground 10 "✓ SSL settings saved to $save_path"
-  }
-
   # Create a configuration file for the extensions
   gum spin --spinner dot --title "Creating server certificate configuration..." -- bash -c "cat > \"${SSL_DIR}/server_cert_ext.cnf\" << EOF
 [req]
@@ -418,46 +370,6 @@ if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
   
   prompt_or_default "Select RSA key size:" KEY_SIZE
 
-  # Save JWT settings if the user wants to
-  gum confirm "Save these JWT settings as defaults for future use?" && {
-    local save_path
-    if [ -n "$CONFIG_FILE" ]; then
-      save_path="$CONFIG_FILE"
-    else
-      save_path="$DEFAULT_CONFIG_FILE"
-    fi
-    
-    # Create the config directory if it doesn't exist
-    mkdir -p "$(dirname "$save_path")"
-    
-    # If the file exists, update it; otherwise create it
-    if [ -f "$save_path" ]; then
-      # Update existing settings in the config file
-      sed -i.bak -e "s/^JWT_DIR=.*$/JWT_DIR=\"$JWT_DIR\"/" \
-                 -e "s/^KEY_SIZE=.*$/KEY_SIZE=\"$KEY_SIZE\"/" "$save_path"
-      # Remove backup file
-      rm -f "${save_path}.bak"
-      
-      # Add any missing settings
-      for key in JWT_DIR KEY_SIZE; do
-        if ! grep -q "^$key=" "$save_path" && ! grep -q "^$key=\"" "$save_path"; then
-          eval "echo \"$key=\\\"\$$key\\\"\" >> \"$save_path\""
-        fi
-      done
-    else
-      # Create a new config file
-      cat > "$save_path" << EOF
-# Sigil configuration
-# Generated on: $(date)
-
-JWT_DIR="$JWT_DIR"
-KEY_SIZE="$KEY_SIZE"
-EOF
-    fi
-    
-    gum style --margin "1" --foreground 10 "✓ JWT settings saved to $save_path"
-  }
-
   # Generate RSA private key
   gum spin --spinner pulse --title "Generating RSA private key (${KEY_SIZE} bits)..." -- \
   openssl genpkey -algorithm RSA -out "${RSA_PRIVATE_KEY}" -pkeyopt rsa_keygen_bits:${KEY_SIZE}
@@ -483,6 +395,41 @@ EOF
     gum style "    (Share this with services that need to verify JWT tokens)"
   )
   gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$JWT_INFO"
+fi
+
+#################################################
+# SAVE DEFAULTS FOR FUTURE USE
+#################################################
+if $INTERACTIVE; then
+  gum style --margin "1" --foreground 7 "Would you like to create a default configuration file for future use?"
+  if gum confirm; then
+    local save_path
+    if [ -n "$CONFIG_FILE" ]; then
+      save_path="$CONFIG_FILE"
+    else
+      save_path="$DEFAULT_CONFIG_FILE"
+    fi
+    
+    # Create the config directory if it doesn't exist
+    mkdir -p "$(dirname "$save_path")"
+    
+    # Create or update the config file
+    cat > "$save_path" << EOF
+# Sigil configuration
+# Generated on: $(date)
+
+SSL_DIR="$SSL_DIR"
+SERVER_CN="$SERVER_CN"
+COUNTRY="$COUNTRY"
+STATE="$STATE"
+LOCALITY="$LOCALITY"
+ORGANIZATION="$ORGANIZATION"
+JWT_DIR="$JWT_DIR"
+KEY_SIZE="$KEY_SIZE"
+EOF
+    
+    gum style --margin "1" --foreground 10 "✓ Default configuration saved to $save_path"
+  fi
 fi
 
 #################################################
