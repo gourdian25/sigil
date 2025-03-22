@@ -15,40 +15,150 @@ set -e  # Exit on any error to ensure the script stops if something goes wrong
 # INTERACTIVE MODE AND DEFAULTS
 #################################################
 INTERACTIVE=false
-# DEFAULTS_FILE="~/.config/sigil/sigil.defaults.conf"
-DEFAULTS_FILE="defaults.conf"
+DEFAULT_CONFIG_FILE="$HOME/.config/sigil/sigil.defaults.conf"
+CONFIG_FILE=""
+
+# Help text
+show_help() {
+  echo "Usage: $0 [options]"
+  echo "Options:"
+  echo "  -i                  Run in interactive mode"
+  echo "  -c CONFIG_FILE      Use specific config file"
+  echo "  -h                  Show this help"
+  exit 0
+}
 
 # Parse command-line arguments
-while getopts "i" opt; do
+while getopts "ic:h" opt; do
   case $opt in
     i) INTERACTIVE=true ;;
-    *) echo "Usage: $0 [-i]"; exit 1 ;;
+    c) CONFIG_FILE="$OPTARG" ;;
+    h) show_help ;;
+    *) echo "Usage: $0 [-i] [-c CONFIG_FILE] [-h]"; exit 1 ;;
   esac
 done
 
-# Internal defaults
+# Internal defaults - properly quoted to avoid issues
+declare -A INTERNAL_DEFAULTS
 INTERNAL_DEFAULTS=(
-  "SSL_DIR=ssl"
-  "SERVER_CN=example.com"
-  "COUNTRY=IN"
-  "STATE=Karnataka"
-  "LOCALITY=Bengaluru"
-  "ORGANIZATION=My Company Inc."
-  "JWT_DIR=keys"
-  "KEY_SIZE=2048"
+  ["SSL_DIR"]="ssl"
+  ["SERVER_CN"]="example.com"
+  ["COUNTRY"]="IN"
+  ["STATE"]="Karnataka"
+  ["LOCALITY"]="Bengaluru"
+  ["ORGANIZATION"]="My Company Inc."
+  ["JWT_DIR"]="keys"
+  ["KEY_SIZE"]="2048"
 )
 
-# Load defaults from external file if it exists
-load_defaults() {
-  if [ -f "$DEFAULTS_FILE" ]; then
-    gum style --margin "1" --foreground 7 --italic "Loading default values from $DEFAULTS_FILE"
-    source "$DEFAULTS_FILE"
-  else
-    gum style --margin "1" --foreground 7 --italic "No external defaults file found. Using internal defaults."
-    for default in "${INTERNAL_DEFAULTS[@]}"; do
-      eval "$default"
-    done
+# Function to create default config file from internal defaults
+create_default_config() {
+  local config_path="$1"
+  
+  # Create directory if it doesn't exist
+  mkdir -p "$(dirname "$config_path")"
+  
+  echo "# Sigil default configuration" > "$config_path"
+  echo "# Generated on: $(date)" >> "$config_path"
+  echo "" >> "$config_path"
+  
+  for key in "${!INTERNAL_DEFAULTS[@]}"; do
+    echo "$key=\"${INTERNAL_DEFAULTS[$key]}\"" >> "$config_path"
+  done
+  
+  chmod 644 "$config_path"
+  gum style --margin "1" --foreground 10 "✓ Default configuration file created at $config_path"
+}
+
+# Verify config file has all required variables
+verify_config() {
+  local config_file="$1"
+  local missing=false
+  
+  for key in "${!INTERNAL_DEFAULTS[@]}"; do
+    if ! grep -q "^$key=" "$config_file" && ! grep -q "^$key=\"" "$config_file"; then
+      gum style --margin "1" --foreground 9 "✗ Missing configuration: $key"
+      missing=true
+    fi
+  done
+  
+  if $missing; then
+    gum style --margin "1" --foreground 9 "Configuration file is incomplete. Would you like to:"
+    local action=$(gum choose "Add missing values from internal defaults" "Use internal defaults for everything" "Abort")
+    
+    case "$action" in
+      "Add missing values from internal defaults")
+        for key in "${!INTERNAL_DEFAULTS[@]}"; do
+          if ! grep -q "^$key=" "$config_file" && ! grep -q "^$key=\"" "$config_file"; then
+            echo "$key=\"${INTERNAL_DEFAULTS[$key]}\"" >> "$config_file"
+            gum style --margin "1" --foreground 10 "✓ Added $key=\"${INTERNAL_DEFAULTS[$key]}\" to config"
+          fi
+        done
+        ;;
+      "Use internal defaults for everything")
+        return 0
+        ;;
+      *)
+        gum style --margin "1" --foreground 9 "Aborting..."
+        exit 1
+        ;;
+    esac
   fi
+  
+  return 0
+}
+
+# Load defaults from a config file
+load_config_file() {
+  local config_file="$1"
+  if [ -f "$config_file" ]; then
+    verify_config "$config_file"
+    gum style --margin "1" --foreground 7 --italic "Loading configuration from $config_file"
+    source "$config_file"
+    return 0
+  fi
+  return 1
+}
+
+# Load defaults from available sources
+load_defaults() {
+  # If specific config file is provided, try to use it
+  if [ -n "$CONFIG_FILE" ]; then
+    if [ -f "$CONFIG_FILE" ]; then
+      load_config_file "$CONFIG_FILE"
+    else
+      gum style --margin "1" --foreground 9 "Specified config file does not exist: $CONFIG_FILE"
+      gum style --margin "1" --foreground 7 "Would you like to create it with internal defaults?"
+      if gum confirm; then
+        create_default_config "$CONFIG_FILE"
+        load_config_file "$CONFIG_FILE"
+      else
+        gum style --margin "1" --foreground 7 --italic "Using internal defaults instead."
+        set_internal_defaults
+      fi
+    fi
+  # Otherwise try default config file
+  elif [ -f "$DEFAULT_CONFIG_FILE" ]; then
+    load_config_file "$DEFAULT_CONFIG_FILE"
+  # If no config files exist, use internal defaults and offer to create default config
+  else
+    gum style --margin "1" --foreground 7 --italic "No configuration file found. Using internal defaults."
+    set_internal_defaults
+    
+    if $INTERACTIVE; then
+      gum style --margin "1" --foreground 7 "Would you like to create a default configuration file for future use?"
+      if gum confirm; then
+        create_default_config "$DEFAULT_CONFIG_FILE"
+      fi
+    fi
+  fi
+}
+
+# Set variables from internal defaults
+set_internal_defaults() {
+  for key in "${!INTERNAL_DEFAULTS[@]}"; do
+    declare -g "$key"="${INTERNAL_DEFAULTS[$key]}"
+  done
 }
 
 # Prompt user for input or use defaults
@@ -59,7 +169,12 @@ prompt_or_default() {
   if $INTERACTIVE; then
     gum style --margin "1" --foreground 212 "$prompt (default: $default_value):"
     read -r -p "> " input
-    eval "$var_name=\${input:-$default_value}"
+    # Use default if input is empty
+    if [ -z "$input" ]; then
+      eval "$var_name=\$default_value"
+    else
+      eval "$var_name=\$input"
+    fi
   else
     eval "$var_name=\$default_value"
   fi
@@ -171,14 +286,50 @@ if grep -q "SSL Certificates" <<< "$OPTIONS"; then
   
   # Save current values as defaults for next time
   gum confirm "Save these certificate details as defaults for future use?" && {
-    mkdir -p "$(dirname "$DEFAULTS_FILE")"
-    cat > "$DEFAULTS_FILE" << EOF
+    local save_path
+    if [ -n "$CONFIG_FILE" ]; then
+      save_path="$CONFIG_FILE"
+    else
+      save_path="$DEFAULT_CONFIG_FILE"
+    fi
+    
+    # Create the config directory if it doesn't exist
+    mkdir -p "$(dirname "$save_path")"
+    
+    # If the file exists, update it; otherwise create it
+    if [ -f "$save_path" ]; then
+      # Update existing settings in the config file
+      sed -i.bak -e "s/^COUNTRY=.*$/COUNTRY=\"$COUNTRY\"/" \
+                 -e "s/^STATE=.*$/STATE=\"$STATE\"/" \
+                 -e "s/^LOCALITY=.*$/LOCALITY=\"$LOCALITY\"/" \
+                 -e "s/^ORGANIZATION=.*$/ORGANIZATION=\"$ORGANIZATION\"/" \
+                 -e "s/^SERVER_CN=.*$/SERVER_CN=\"$SERVER_CN\"/" \
+                 -e "s/^SSL_DIR=.*$/SSL_DIR=\"$SSL_DIR\"/" "$save_path"
+      # Remove backup file
+      rm -f "${save_path}.bak"
+      
+      # Add any missing settings
+      for key in COUNTRY STATE LOCALITY ORGANIZATION SERVER_CN SSL_DIR; do
+        if ! grep -q "^$key=" "$save_path" && ! grep -q "^$key=\"" "$save_path"; then
+          eval "echo \"$key=\\\"\$$key\\\"\" >> \"$save_path\""
+        fi
+      done
+    else
+      # Create a new config file
+      cat > "$save_path" << EOF
+# Sigil configuration
+# Generated on: $(date)
+
 COUNTRY="$COUNTRY"
 STATE="$STATE"
 LOCALITY="$LOCALITY"
 ORGANIZATION="$ORGANIZATION"
+SERVER_CN="$SERVER_CN"
+SSL_DIR="$SSL_DIR"
 EOF
-    gum style --margin "1" --foreground 10 "✓ Default values saved to $DEFAULTS_FILE"
+    fi
+    
+    gum style --margin "1" --foreground 10 "✓ SSL settings saved to $save_path"
   }
 
   # Create a configuration file for the extensions
@@ -266,6 +417,46 @@ if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
   gum style --margin "1" --foreground 7 "4096 bits: Maximum security, may impact performance"
   
   prompt_or_default "Select RSA key size:" KEY_SIZE
+
+  # Save JWT settings if the user wants to
+  gum confirm "Save these JWT settings as defaults for future use?" && {
+    local save_path
+    if [ -n "$CONFIG_FILE" ]; then
+      save_path="$CONFIG_FILE"
+    else
+      save_path="$DEFAULT_CONFIG_FILE"
+    fi
+    
+    # Create the config directory if it doesn't exist
+    mkdir -p "$(dirname "$save_path")"
+    
+    # If the file exists, update it; otherwise create it
+    if [ -f "$save_path" ]; then
+      # Update existing settings in the config file
+      sed -i.bak -e "s/^JWT_DIR=.*$/JWT_DIR=\"$JWT_DIR\"/" \
+                 -e "s/^KEY_SIZE=.*$/KEY_SIZE=\"$KEY_SIZE\"/" "$save_path"
+      # Remove backup file
+      rm -f "${save_path}.bak"
+      
+      # Add any missing settings
+      for key in JWT_DIR KEY_SIZE; do
+        if ! grep -q "^$key=" "$save_path" && ! grep -q "^$key=\"" "$save_path"; then
+          eval "echo \"$key=\\\"\$$key\\\"\" >> \"$save_path\""
+        fi
+      done
+    else
+      # Create a new config file
+      cat > "$save_path" << EOF
+# Sigil configuration
+# Generated on: $(date)
+
+JWT_DIR="$JWT_DIR"
+KEY_SIZE="$KEY_SIZE"
+EOF
+    fi
+    
+    gum style --margin "1" --foreground 10 "✓ JWT settings saved to $save_path"
+  }
 
   # Generate RSA private key
   gum spin --spinner pulse --title "Generating RSA private key (${KEY_SIZE} bits)..." -- \
