@@ -247,8 +247,8 @@ fi
 #################################################
 # USER INPUT: SELECT WHAT TO GENERATE
 #################################################
-  gum style --margin "1" --foreground 99 "Please select what you would like to generate:"
-  OPTIONS=$(gum choose --no-limit --header "What would you like to generate?" "SSL Certificates" "JWT RSA Keys")
+gum style --margin "1" --foreground 99 "Please select what you would like to generate:"
+OPTIONS=$(gum choose --no-limit --header "What would you like to generate?" "SSL Certificates" "JWT RSA Keys")
 
 #################################################
 # USER INPUT: DIRECTORY SELECTION
@@ -277,7 +277,8 @@ fi
 # PART 1: GENERATE SSL CERTIFICATES
 #################################################
 if grep -q "SSL Certificates" <<< "$OPTIONS"; then
-    gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH "$(gum style --foreground 99 --align center 'SSL Certificate Generation')"
+  gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH --align center "$(gum style --foreground 99 'SSL Certificate Generation')"
+  
   if $INTERACTIVE; then
     gum style --margin "1" --foreground 99 "Let's configure your SSL certificate details:"
   fi
@@ -359,28 +360,28 @@ EOF"
   gum spin --spinner line --title "Converting server certificate to PEM format for gRPC..." -- \
   openssl pkcs8 -topk8 -nocrypt -passin pass:1111 -in "${SSL_DIR}/server.key" -out "${SSL_DIR}/server.pem"
 
-    gum style --margin "1" --foreground 10 "✓ SSL certificate generation completed successfully"
-    
-    # Show SSL files information in a full-width box
-    SSL_INFO=$(
-      gum style --italic "SSL files generated in '${SSL_DIR}' directory:"
-      for FILE in "ca.key: Certificate Authority private key (keep secure)" \
-                  "ca.crt: Certificate Authority trust certificate" \
-                  "server.key: Server private key, password protected" \
-                  "server.csr: Server certificate signing request" \
-                  "server.crt: Server certificate signed by the CA" \
-                  "server.pem: Server private key in PEM format for gRPC"; do
-        gum style "  • ${FILE}"
-      done
-    )
-    gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$SSL_INFO"
+  gum style --margin "1" --foreground 10 "✓ SSL certificate generation completed successfully"
+  
+  # Show SSL files information in a full-width box
+  SSL_INFO=$(
+    gum style --italic "SSL files generated in '${SSL_DIR}' directory:"
+    for FILE in "ca.key: Certificate Authority private key (keep secure)" \
+                "ca.crt: Certificate Authority trust certificate" \
+                "server.key: Server private key, password protected" \
+                "server.csr: Server certificate signing request" \
+                "server.crt: Server certificate signed by the CA" \
+                "server.pem: Server private key in PEM format for gRPC"; do
+      gum style "  • ${FILE}"
+    done
+  )
+  gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$SSL_INFO"
 fi
 
 #################################################
 # PART 2: GENERATE RSA KEYS FOR JWT
 #################################################
 if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
-  gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH "$(gum style --foreground 99 --align center 'JWT RSA Key Generation')"
+  gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH --align center "$(gum style --foreground 99 'JWT RSA Key Generation')"
 
   # Define output file paths
   RSA_PRIVATE_KEY="${JWT_DIR}/rsa_private.pem"
@@ -412,23 +413,23 @@ if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
   chmod 644 \"${RSA_PUBLIC_KEY}\"   # Public key can be readable
   "
 
-    gum style --margin "1" --foreground 10 "✓ JWT RSA key generation completed successfully"
-    
-    # Show JWT files information in a full-width box
-    JWT_INFO=$(
-      gum style --italic "JWT RSA files generated in '${JWT_DIR}' directory:"
-      gum style "  • Private Key: ${RSA_PRIVATE_KEY}"
-      gum style "    (Keep this secure! Used to sign your JWT tokens)"
-      gum style "  • Public Key: ${RSA_PUBLIC_KEY}"
-      gum style "    (Share this with services that need to verify JWT tokens)"
-    )
-    gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$JWT_INFO"
+  gum style --margin "1" --foreground 10 "✓ JWT RSA key generation completed successfully"
+  
+  # Show JWT files information in a full-width box
+  JWT_INFO=$(
+    gum style --italic "JWT RSA files generated in '${JWT_DIR}' directory:"
+    gum style "  • Private Key: ${RSA_PRIVATE_KEY}"
+    gum style "    (Keep this secure! Used to sign your JWT tokens)"
+    gum style "  • Public Key: ${RSA_PUBLIC_KEY}"
+    gum style "    (Share this with services that need to verify JWT tokens)"
+  )
+  gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$JWT_INFO"
 fi
 
 #################################################
 # SAVE DEFAULTS FOR FUTURE USE
 #################################################
-if $INTERACTIVE; then
+if $INTERACTIVE && [ ! -f "$DEFAULT_CONFIG_FILE" ]; then
   gum style --margin "1" --foreground 7 "Would you like to save the current settings as default configuration for future use?"
   if gum confirm; then
     save_path="$DEFAULT_CONFIG_FILE"
