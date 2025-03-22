@@ -49,7 +49,7 @@ INTERNAL_DEFAULTS=(
   ["ORGANIZATION"]="My Company Inc."
   ["JWT_DIR"]="keys"
   ["KEY_SIZE"]="2048"
-  ["ADDITIONAL_DNS"]="example.com,api.example.com"
+  ["ADDITIONAL_DNS"]=""
 )
 
 # Function to create default config file from internal defaults
@@ -224,14 +224,6 @@ echo -e "\n$WELCOME_MSG\n"
 # Show configuration status if it exists
 if [ -n "$CONFIG_STATUS" ]; then
   gum style --margin "1" --foreground 7 --italic "$CONFIG_STATUS"
-fi
-
-# Offer to create a default config file in interactive mode if no file exists
-if $INTERACTIVE && [ -n "$CONFIG_STATUS" ]; then
-  gum style --margin "1" --foreground 7 "Would you like to create a default configuration file for future use?"
-  if gum confirm; then
-    create_default_config "$DEFAULT_CONFIG_FILE"
-  fi
 fi
 
 #################################################
@@ -425,12 +417,7 @@ fi
 if $INTERACTIVE; then
   gum style --margin "1" --foreground 7 "Would you like to save the current settings as default configuration for future use?"
   if gum confirm; then
-    local save_path
-    if [ -n "$CONFIG_FILE" ]; then
-      save_path="$CONFIG_FILE"
-    else
-      save_path="$DEFAULT_CONFIG_FILE"
-    fi
+    save_path="$DEFAULT_CONFIG_FILE"
     
     # Create the config directory if it doesn't exist
     mkdir -p "$(dirname "$save_path")"
@@ -498,5 +485,3 @@ NAME=$(whoami)
 GOODBYE=$(gum style --margin "1" --border thick --padding "1 2" --border-foreground 57 --width $TERMINAL_WIDTH --align center \
     "Thanks for using $(gum style --foreground 212 'Sigil'), $(gum style --foreground 212 "$NAME")!")
 echo -e "\n$GOODBYE"
-
-
