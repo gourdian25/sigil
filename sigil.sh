@@ -68,7 +68,9 @@ create_default_config() {
   done
   
   chmod 644 "$config_path"
-  gum style --margin "1" --foreground 10 "✓ Default configuration file created at $config_path"
+  if $INTERACTIVE; then
+    gum style --margin "1" --foreground 10 "✓ Default configuration file created at $config_path"
+  fi
 }
 
 # Verify config file has all required variables
@@ -78,32 +80,39 @@ verify_config() {
   
   for key in "${!INTERNAL_DEFAULTS[@]}"; do
     if ! grep -q "^$key=" "$config_file" && ! grep -q "^$key=\"" "$config_file"; then
-      gum style --margin "1" --foreground 9 "✗ Missing configuration: $key"
+      if $INTERACTIVE; then
+        gum style --margin "1" --foreground 9 "✗ Missing configuration: $key"
+      fi
       missing=true
     fi
   done
   
   if $missing; then
-    gum style --margin "1" --foreground 9 "Configuration file is incomplete. Would you like to:"
-    local action=$(gum choose "Add missing values from internal defaults" "Use internal defaults for everything" "Abort")
-    
-    case "$action" in
-      "Add missing values from internal defaults")
-        for key in "${!INTERNAL_DEFAULTS[@]}"; do
-          if ! grep -q "^$key=" "$config_file" && ! grep -q "^$key=\"" "$config_file"; then
-            echo "$key=\"${INTERNAL_DEFAULTS[$key]}\"" >> "$config_file"
-            gum style --margin "1" --foreground 10 "✓ Added $key=\"${INTERNAL_DEFAULTS[$key]}\" to config"
-          fi
-        done
-        ;;
-      "Use internal defaults for everything")
-        return 0
-        ;;
-      *)
-        gum style --margin "1" --foreground 9 "Aborting..."
-        exit 1
-        ;;
-    esac
+    if $INTERACTIVE; then
+      gum style --margin "1" --foreground 9 "Configuration file is incomplete. Would you like to:"
+      local action=$(gum choose "Add missing values from internal defaults" "Use internal defaults for everything" "Abort")
+      
+      case "$action" in
+        "Add missing values from internal defaults")
+          for key in "${!INTERNAL_DEFAULTS[@]}"; do
+            if ! grep -q "^$key=" "$config_file" && ! grep -q "^$key=\"" "$config_file"; then
+              echo "$key=\"${INTERNAL_DEFAULTS[$key]}\"" >> "$config_file"
+              gum style --margin "1" --foreground 10 "✓ Added $key=\"${INTERNAL_DEFAULTS[$key]}\" to config"
+            fi
+          done
+          ;;
+        "Use internal defaults for everything")
+          return 0
+          ;;
+        *)
+          gum style --margin "1" --foreground 9 "Aborting..."
+          exit 1
+          ;;
+      esac
+    else
+      # In non-interactive mode, use internal defaults if config is incomplete
+      return 0
+    fi
   fi
   
   return 0
@@ -114,7 +123,9 @@ load_config_file() {
   local config_file="$1"
   if [ -f "$config_file" ]; then
     verify_config "$config_file"
-    gum style --margin "1" --foreground 7 --italic "Loading configuration from $config_file"
+    if $INTERACTIVE; then
+      gum style --margin "1" --foreground 7 --italic "Loading configuration from $config_file"
+    fi
     source "$config_file"
     return 0
   fi
@@ -128,13 +139,18 @@ load_defaults() {
     if [ -f "$CONFIG_FILE" ]; then
       load_config_file "$CONFIG_FILE"
     else
-      gum style --margin "1" --foreground 9 "Specified config file does not exist: $CONFIG_FILE"
-      gum style --margin "1" --foreground 7 "Would you like to create it with internal defaults?"
-      if gum confirm; then
-        create_default_config "$CONFIG_FILE"
-        load_config_file "$CONFIG_FILE"
+      if $INTERACTIVE; then
+        gum style --margin "1" --foreground 9 "Specified config file does not exist: $CONFIG_FILE"
+        gum style --margin "1" --foreground 7 "Would you like to create it with internal defaults?"
+        if gum confirm; then
+          create_default_config "$CONFIG_FILE"
+          load_config_file "$CONFIG_FILE"
+        else
+          gum style --margin "1" --foreground 7 --italic "Using internal defaults instead."
+          set_internal_defaults
+        fi
       else
-        gum style --margin "1" --foreground 7 --italic "Using internal defaults instead."
+        # In non-interactive mode, use internal defaults if config file doesn't exist
         set_internal_defaults
       fi
     fi
@@ -144,7 +160,9 @@ load_defaults() {
   # If no config files exist, use internal defaults and offer to create default config
   else
     # This message should show after the welcome banner
-    CONFIG_STATUS="No configuration file found. Using internal defaults."
+    if $INTERACTIVE; then
+      CONFIG_STATUS="No configuration file found. Using internal defaults."
+    fi
     set_internal_defaults
   fi
 }
@@ -229,14 +247,12 @@ fi
 #################################################
 # USER INPUT: SELECT WHAT TO GENERATE
 #################################################
-# Ask the user what they want to generate (SSL certificates, JWT RSA keys, or both)
-gum style --margin "1" --foreground 99 "Please select what you would like to generate:"
-OPTIONS=$(gum choose --no-limit --header "What would you like to generate?" "SSL Certificates" "JWT RSA Keys")
+  gum style --margin "1" --foreground 99 "Please select what you would like to generate:"
+  OPTIONS=$(gum choose --no-limit --header "What would you like to generate?" "SSL Certificates" "JWT RSA Keys")
 
 #################################################
 # USER INPUT: DIRECTORY SELECTION
 #################################################
-# Ask for directories based on the selected options
 if grep -q "SSL Certificates" <<< "$OPTIONS"; then
   prompt_or_default "Where do you want to store the generated SSL certificates?" SSL_DIR
   show_info "This directory will contain the CA certificate, server certificate, and keys."
@@ -261,10 +277,10 @@ fi
 # PART 1: GENERATE SSL CERTIFICATES
 #################################################
 if grep -q "SSL Certificates" <<< "$OPTIONS"; then
-  gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH "$(gum style --foreground 99 --align center 'SSL Certificate Generation')"
-
-  # Interactive certificate configuration
-  gum style --margin "1" --foreground 99 "Let's configure your SSL certificate details:"
+    gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH "$(gum style --foreground 99 --align center 'SSL Certificate Generation')"
+  if $INTERACTIVE; then
+    gum style --margin "1" --foreground 99 "Let's configure your SSL certificate details:"
+  fi
   
   # Prompt for certificate details
   prompt_or_default "Enter the two-letter country code (e.g., US, UK, IN):" COUNTRY
@@ -281,7 +297,6 @@ if grep -q "SSL Certificates" <<< "$OPTIONS"; then
     
     ADDITIONAL_DNS=$(gum input --placeholder "Additional DNS names (optional)")
   fi
-  # In non-interactive mode, use default value from config or internal defaults
   
   # Create DNS entries for the config
   DNS_ENTRIES="DNS.1 = ${SERVER_CN}"$'\n'"DNS.2 = 127.0.0.1"
@@ -344,21 +359,21 @@ EOF"
   gum spin --spinner line --title "Converting server certificate to PEM format for gRPC..." -- \
   openssl pkcs8 -topk8 -nocrypt -passin pass:1111 -in "${SSL_DIR}/server.key" -out "${SSL_DIR}/server.pem"
 
-  gum style --margin "1" --foreground 10 "✓ SSL certificate generation completed successfully"
-  
-  # Show SSL files information in a full-width box
-  SSL_INFO=$(
-    gum style --italic "SSL files generated in '${SSL_DIR}' directory:"
-    for FILE in "ca.key: Certificate Authority private key (keep secure)" \
-                "ca.crt: Certificate Authority trust certificate" \
-                "server.key: Server private key, password protected" \
-                "server.csr: Server certificate signing request" \
-                "server.crt: Server certificate signed by the CA" \
-                "server.pem: Server private key in PEM format for gRPC"; do
-      gum style "  • ${FILE}"
-    done
-  )
-  gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$SSL_INFO"
+    gum style --margin "1" --foreground 10 "✓ SSL certificate generation completed successfully"
+    
+    # Show SSL files information in a full-width box
+    SSL_INFO=$(
+      gum style --italic "SSL files generated in '${SSL_DIR}' directory:"
+      for FILE in "ca.key: Certificate Authority private key (keep secure)" \
+                  "ca.crt: Certificate Authority trust certificate" \
+                  "server.key: Server private key, password protected" \
+                  "server.csr: Server certificate signing request" \
+                  "server.crt: Server certificate signed by the CA" \
+                  "server.pem: Server private key in PEM format for gRPC"; do
+        gum style "  • ${FILE}"
+      done
+    )
+    gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$SSL_INFO"
 fi
 
 #################################################
@@ -372,9 +387,8 @@ if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
   RSA_PUBLIC_KEY="${JWT_DIR}/rsa_public.pem"
 
   # Ask for key size with explanation - Only show the explanation in interactive mode
-  gum style --margin "1" --foreground 99 "Select the RSA key size:"
-  
   if $INTERACTIVE; then
+    gum style --margin "1" --foreground 99 "Select the RSA key size:"
     gum style --margin "1" --foreground 7 --italic "The key size determines the security level of your JWT tokens."
     gum style --margin "1" --foreground 7 --italic "Larger keys provide more security but may have performance impact."
     gum style --margin "1" --foreground 7 "2048 bits: Standard security, good performance"
@@ -398,17 +412,17 @@ if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
   chmod 644 \"${RSA_PUBLIC_KEY}\"   # Public key can be readable
   "
 
-  gum style --margin "1" --foreground 10 "✓ JWT RSA key generation completed successfully"
-  
-  # Show JWT files information in a full-width box
-  JWT_INFO=$(
-    gum style --italic "JWT RSA files generated in '${JWT_DIR}' directory:"
-    gum style "  • Private Key: ${RSA_PRIVATE_KEY}"
-    gum style "    (Keep this secure! Used to sign your JWT tokens)"
-    gum style "  • Public Key: ${RSA_PUBLIC_KEY}"
-    gum style "    (Share this with services that need to verify JWT tokens)"
-  )
-  gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$JWT_INFO"
+    gum style --margin "1" --foreground 10 "✓ JWT RSA key generation completed successfully"
+    
+    # Show JWT files information in a full-width box
+    JWT_INFO=$(
+      gum style --italic "JWT RSA files generated in '${JWT_DIR}' directory:"
+      gum style "  • Private Key: ${RSA_PRIVATE_KEY}"
+      gum style "    (Keep this secure! Used to sign your JWT tokens)"
+      gum style "  • Public Key: ${RSA_PUBLIC_KEY}"
+      gum style "    (Share this with services that need to verify JWT tokens)"
+    )
+    gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$JWT_INFO"
 fi
 
 #################################################
