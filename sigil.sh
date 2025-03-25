@@ -4,6 +4,7 @@
 # 1. Self-signed SSL certificates for gRPC
 # 2. RSA keys for JWT token signing
 # 3. EdDSA (Ed25519) keys for JWT token signing
+# 4. ECDSA (prime256v1) keys for JWT token signing
 #
 # Written by: https://github.com/gourdian25
 # Inspired by:
@@ -52,7 +53,7 @@ INTERNAL_DEFAULTS=(
   ["ORGANIZATION"]="My Company Inc."
   ["JWT_DIR"]="keys"
   ["KEY_SIZE"]="2048"
-  ["KEY_TYPE"]="RSA"  # Added default key type
+  ["KEY_TYPE"]="RSA"
   ["ADDITIONAL_DNS"]=""
 )
 
@@ -241,7 +242,7 @@ TERMINAL_WIDTH=$(( $(tput cols) - 4 ))
 #################################################
 # Welcome message with thick border and full-width layout
 WELCOME_MSG=$(gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --align center "Welcome to $(gum style --foreground 212 'Sigil')
-Your go-to tool for generating SSL certificates and JWT (RSA/EdDSA) keys with ease.")
+Your go-to tool for generating SSL certificates and JWT (RSA/EdDSA/ECDSA) keys with ease.")
 
 # Display the welcome message
 echo -e "\n$WELCOME_MSG\n"
@@ -284,7 +285,8 @@ if grep -q "JWT Keys" <<< "$OPTIONS"; then
     gum style --margin "1" --foreground 99 "Select the type(s) of JWT keys to generate:"
     gum style --margin "1" --foreground 7 --italic "RSA: Traditional algorithm, widely supported, larger keys"
     gum style --margin "1" --foreground 7 --italic "EdDSA (Ed25519): Modern algorithm, smaller keys, better performance"
-    KEY_TYPES=$(gum choose --no-limit --header "Key types (space to select)" "RSA" "EdDSA")
+    gum style --margin "1" --foreground 7 --italic "ECDSA (prime256v1): Elliptic curve algorithm, good balance of security and performance"
+    KEY_TYPES=$(gum choose --no-limit --header "Key types (space to select)" "RSA" "EdDSA" "ECDSA")
   else
     # Use default in non-interactive mode (just RSA)
     KEY_TYPES="RSA"
@@ -307,7 +309,6 @@ if grep -q "JWT Keys" <<< "$OPTIONS" && [[ "$KEY_TYPES" == *"RSA"* ]]; then
   
   prompt_or_default "Select RSA key size:" KEY_SIZE
 fi
-
 
 #################################################
 # PART 1: GENERATE SSL CERTIFICATES
@@ -499,6 +500,42 @@ if grep -q "JWT Keys" <<< "$OPTIONS"; then
     JWT_INFO+=$'\n'$(gum style "similar security to RSA keys of 3000+ bits.")
   fi
 
+  # Generate ECDSA keys if selected
+  if [[ "$KEY_TYPES" == *"ECDSA"* ]]; then
+    # ECDSA Key Generation
+    gum style --margin "1" --foreground 99 "Generating ECDSA (prime256v1) keys for JWT signing..."
+    
+    # Define output file paths
+    PRIVATE_KEY="${JWT_DIR}/ec256_private.pem"
+    PUBLIC_KEY="${JWT_DIR}/ec256_public.pem"
+
+    # Generate ECDSA private key
+    gum spin --spinner pulse --title "Generating ECDSA private key (prime256v1 curve)..." -- \
+    openssl ecparam -name prime256v1 -genkey -noout -out "${PRIVATE_KEY}"
+
+    # Extract public key from the private key
+    gum spin --spinner pulse --title "Extracting public key from private key..." -- \
+    openssl ec -in "${PRIVATE_KEY}" -pubout -out "${PUBLIC_KEY}"
+
+    # Set appropriate permissions
+    gum spin --spinner pulse --title "Setting appropriate file permissions..." -- bash -c "
+    chmod 600 \"${PRIVATE_KEY}\"  # Restrictive permissions for private key
+    chmod 644 \"${PUBLIC_KEY}\"   # Public key can be readable
+    "
+
+    gum style --margin "1" --foreground 10 "✓ ECDSA key generation completed successfully"
+    
+    # Add to JWT info
+    JWT_INFO+=$'\n'$(gum style --italic "JWT ECDSA files generated in '${JWT_DIR}' directory:")
+    JWT_INFO+=$'\n'$(gum style "  • Private Key: ${PRIVATE_KEY}")
+    JWT_INFO+=$'\n'$(gum style "    (Keep this secure! Used to sign your JWT tokens)")
+    JWT_INFO+=$'\n'$(gum style "  • Public Key: ${PUBLIC_KEY}")
+    JWT_INFO+=$'\n'$(gum style "    (Share this with services that need to verify JWT tokens)")
+    JWT_INFO+=$'\n'
+    JWT_INFO+=$'\n'$(gum style "Note: ECDSA (prime256v1) provides good security with smaller key sizes")
+    JWT_INFO+=$'\n'$(gum style "compared to RSA, while being widely supported.")
+  fi
+
   gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$JWT_INFO"
 fi
 
@@ -572,6 +609,12 @@ if grep -q "JWT Keys" <<< "$OPTIONS"; then
   if [[ "$KEY_TYPES" == *"EdDSA"* ]]; then
     echo "$(gum style "• EdDSA Private Key: \"${JWT_DIR}/ed25519_private.pem\"")" >> "$TEMP_SUMMARY_FILE"
     echo "$(gum style "• EdDSA Public Key: \"${JWT_DIR}/ed25519_public.pem\"")" >> "$TEMP_SUMMARY_FILE"
+    echo "" >> "$TEMP_SUMMARY_FILE"
+  fi
+  
+  if [[ "$KEY_TYPES" == *"ECDSA"* ]]; then
+    echo "$(gum style "• ECDSA Private Key: \"${JWT_DIR}/ec256_private.pem\"")" >> "$TEMP_SUMMARY_FILE"
+    echo "$(gum style "• ECDSA Public Key: \"${JWT_DIR}/ec256_public.pem\"")" >> "$TEMP_SUMMARY_FILE"
   fi
 fi
 
