@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # Sigil - A powerful tool for generating:
 # 1. Self-signed SSL certificates for gRPC
 # 2. RSA keys for JWT token signing
@@ -278,22 +279,22 @@ if grep -q "JWT Keys" <<< "$OPTIONS"; then
   # Create the JWT directory if it doesn't exist
   gum spin --spinner dot --title "Creating JWT directory..." -- mkdir -p "${JWT_DIR}"
 
-  # Ask for key type (RSA or EdDSA)
+  # Ask for key types (can select both RSA and EdDSA)
   if $INTERACTIVE; then
-    gum style --margin "1" --foreground 99 "Select the type of JWT keys to generate:"
+    gum style --margin "1" --foreground 99 "Select the type(s) of JWT keys to generate:"
     gum style --margin "1" --foreground 7 --italic "RSA: Traditional algorithm, widely supported, larger keys"
     gum style --margin "1" --foreground 7 --italic "EdDSA (Ed25519): Modern algorithm, smaller keys, better performance"
-    KEY_TYPE=$(gum choose --header "Key type" "RSA" "EdDSA")
+    KEY_TYPES=$(gum choose --no-limit --header "Key types (space to select)" "RSA" "EdDSA")
   else
-    # Use default in non-interactive mode
-    KEY_TYPE="${INTERNAL_DEFAULTS[KEY_TYPE]}"
+    # Use default in non-interactive mode (just RSA)
+    KEY_TYPES="RSA"
   fi
 fi
 
 #################################################
 # USER INPUT: KEY CONFIGURATION
 #################################################
-if grep -q "JWT Keys" <<< "$OPTIONS" && [ "$KEY_TYPE" = "RSA" ]; then
+if grep -q "JWT Keys" <<< "$OPTIONS" && [[ "$KEY_TYPES" == *"RSA"* ]]; then
   # Ask for key size with explanation - Only show the explanation in interactive mode
   if $INTERACTIVE; then
     gum style --margin "1" --foreground 99 "Select the RSA key size:"
@@ -306,6 +307,7 @@ if grep -q "JWT Keys" <<< "$OPTIONS" && [ "$KEY_TYPE" = "RSA" ]; then
   
   prompt_or_default "Select RSA key size:" KEY_SIZE
 fi
+
 
 #################################################
 # PART 1: GENERATE SSL CERTIFICATES
@@ -417,7 +419,10 @@ fi
 if grep -q "JWT Keys" <<< "$OPTIONS"; then
   gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH --align center "$(gum style --foreground 99 'JWT Key Generation')"
 
-  if [ "$KEY_TYPE" = "RSA" ]; then
+  JWT_INFO=""
+  
+  # Generate RSA keys if selected
+  if [[ "$KEY_TYPES" == *"RSA"* ]]; then
     # RSA Key Generation
     gum style --margin "1" --foreground 99 "Generating RSA keys for JWT signing..."
     
@@ -441,16 +446,17 @@ if grep -q "JWT Keys" <<< "$OPTIONS"; then
 
     gum style --margin "1" --foreground 10 "✓ RSA key generation completed successfully"
     
-    # Show JWT files information in a full-width box
-    JWT_INFO=$(
-      gum style --italic "JWT RSA files generated in '${JWT_DIR}' directory:"
-      gum style "  • Private Key: ${PRIVATE_KEY}"
-      gum style "    (Keep this secure! Used to sign your JWT tokens)"
-      gum style "  • Public Key: ${PUBLIC_KEY}"
-      gum style "    (Share this with services that need to verify JWT tokens)"
-    )
-    
-  elif [ "$KEY_TYPE" = "EdDSA" ]; then
+    # Add to JWT info
+    JWT_INFO+=$'\n'$(gum style --italic "JWT RSA files generated in '${JWT_DIR}' directory:")
+    JWT_INFO+=$'\n'$(gum style "  • Private Key: ${PRIVATE_KEY}")
+    JWT_INFO+=$'\n'$(gum style "    (Keep this secure! Used to sign your JWT tokens)")
+    JWT_INFO+=$'\n'$(gum style "  • Public Key: ${PUBLIC_KEY}")
+    JWT_INFO+=$'\n'$(gum style "    (Share this with services that need to verify JWT tokens)")
+    JWT_INFO+=$'\n'
+  fi
+
+  # Generate EdDSA keys if selected
+  if [[ "$KEY_TYPES" == *"EdDSA"* ]]; then
     # EdDSA Key Generation
     gum style --margin "1" --foreground 99 "Generating EdDSA (Ed25519) keys for JWT signing..."
     
@@ -482,17 +488,15 @@ if grep -q "JWT Keys" <<< "$OPTIONS"; then
 
     gum style --margin "1" --foreground 10 "✓ EdDSA key generation completed successfully"
     
-    # Show JWT files information in a full-width box
-    JWT_INFO=$(
-      gum style --italic "JWT EdDSA files generated in '${JWT_DIR}' directory:"
-      gum style "  • Private Key: ${PRIVATE_KEY}"
-      gum style "    (Keep this secure! Used to sign your JWT tokens)"
-      gum style "  • Public Key: ${PUBLIC_KEY}"
-      gum style "    (Share this with services that need to verify JWT tokens)"
-      gum style ""
-      gum style "Note: Ed25519 keys are much smaller than RSA keys while providing"
-      gum style "similar security to RSA keys of 3000+ bits."
-    )
+    # Add to JWT info
+    JWT_INFO+=$'\n'$(gum style --italic "JWT EdDSA files generated in '${JWT_DIR}' directory:")
+    JWT_INFO+=$'\n'$(gum style "  • Private Key: ${PRIVATE_KEY}")
+    JWT_INFO+=$'\n'$(gum style "    (Keep this secure! Used to sign your JWT tokens)")
+    JWT_INFO+=$'\n'$(gum style "  • Public Key: ${PUBLIC_KEY}")
+    JWT_INFO+=$'\n'$(gum style "    (Share this with services that need to verify JWT tokens)")
+    JWT_INFO+=$'\n'
+    JWT_INFO+=$'\n'$(gum style "Note: Ed25519 keys are much smaller than RSA keys while providing")
+    JWT_INFO+=$'\n'$(gum style "similar security to RSA keys of 3000+ bits.")
   fi
 
   gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$JWT_INFO"
@@ -556,16 +560,18 @@ fi
 
 # Add JWT summary if JWT was generated
 if grep -q "JWT Keys" <<< "$OPTIONS"; then
-  if [ "$KEY_TYPE" = "RSA" ]; then
-    echo "$(gum style --foreground 99 --align center "JWT RSA Keys")" >> "$TEMP_SUMMARY_FILE"
+  echo "$(gum style --foreground 99 --align center "JWT Keys")" >> "$TEMP_SUMMARY_FILE"
+  echo "" >> "$TEMP_SUMMARY_FILE"
+  
+  if [[ "$KEY_TYPES" == *"RSA"* ]]; then
+    echo "$(gum style "• RSA Private Key: \"${JWT_DIR}/rsa_private.pem\"")" >> "$TEMP_SUMMARY_FILE"
+    echo "$(gum style "• RSA Public Key: \"${JWT_DIR}/rsa_public.pem\"")" >> "$TEMP_SUMMARY_FILE"
     echo "" >> "$TEMP_SUMMARY_FILE"
-    echo "$(gum style "• Private Key Path: \"${JWT_DIR}/rsa_private.pem\"")" >> "$TEMP_SUMMARY_FILE"
-    echo "$(gum style "• Public Key Path: \"${JWT_DIR}/rsa_public.pem\"")" >> "$TEMP_SUMMARY_FILE"
-  elif [ "$KEY_TYPE" = "EdDSA" ]; then
-    echo "$(gum style --foreground 99 --align center "JWT EdDSA Keys")" >> "$TEMP_SUMMARY_FILE"
-    echo "" >> "$TEMP_SUMMARY_FILE"
-    echo "$(gum style "• Private Key Path: \"${JWT_DIR}/ed25519_private.pem\"")" >> "$TEMP_SUMMARY_FILE"
-    echo "$(gum style "• Public Key Path: \"${JWT_DIR}/ed25519_public.pem\"")" >> "$TEMP_SUMMARY_FILE"
+  fi
+  
+  if [[ "$KEY_TYPES" == *"EdDSA"* ]]; then
+    echo "$(gum style "• EdDSA Private Key: \"${JWT_DIR}/ed25519_private.pem\"")" >> "$TEMP_SUMMARY_FILE"
+    echo "$(gum style "• EdDSA Public Key: \"${JWT_DIR}/ed25519_public.pem\"")" >> "$TEMP_SUMMARY_FILE"
   fi
 fi
 
@@ -580,3 +586,4 @@ NAME=$(whoami)
 GOODBYE=$(gum style --margin "1" --border thick --padding "1 2" --border-foreground 57 --width $TERMINAL_WIDTH --align center \
     "Thanks for using $(gum style --foreground 212 'Sigil'), $(gum style --foreground 212 "$NAME")!")
 echo -e "\n$GOODBYE"
+
