@@ -4,7 +4,9 @@
 # 1. Self-signed SSL certificates for gRPC
 # 2. RSA keys for JWT token signing
 # 3. EdDSA (Ed25519) keys for JWT token signing
-# 4. ECDSA (prime256v1) keys for JWT token signing
+# 4. ECDSA (prime256v1, P-384, P-521) keys for JWT token signing
+# 5. HMAC key generation
+# 6. RSA-PSS keys for JWT token signing
 #
 # Written by: https://github.com/gourdian25
 # Inspired by:
@@ -55,6 +57,7 @@ INTERNAL_DEFAULTS=(
   ["KEY_SIZE"]="2048"
   ["KEY_TYPE"]="RSA"
   ["ADDITIONAL_DNS"]=""
+  ["HMAC_KEY_SIZE"]="32"  # Default to 256-bit for HS256
 )
 
 # Function to create default config file from internal defaults
@@ -242,7 +245,7 @@ TERMINAL_WIDTH=$(( $(tput cols) - 4 ))
 #################################################
 # Welcome message with thick border and full-width layout
 WELCOME_MSG=$(gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --align center "Welcome to $(gum style --foreground 212 'Sigil')
-Your go-to tool for generating SSL certificates and JWT (RSA/EdDSA/ECDSA) keys with ease.")
+Your go-to tool for generating SSL certificates and JWT (RSA/EdDSA/ECDSA/HMAC) keys with ease.")
 
 # Display the welcome message
 echo -e "\n$WELCOME_MSG\n"
@@ -280,13 +283,15 @@ if grep -q "JWT Keys" <<< "$OPTIONS"; then
   # Create the JWT directory if it doesn't exist
   gum spin --spinner dot --title "Creating JWT directory..." -- mkdir -p "${JWT_DIR}"
 
-  # Ask for key types (can select both RSA and EdDSA)
+  # Ask for key types (can select multiple)
   if $INTERACTIVE; then
     gum style --margin "1" --foreground 99 "Select the type(s) of JWT keys to generate:"
     gum style --margin "1" --foreground 7 --italic "RSA: Traditional algorithm, widely supported, larger keys"
+    gum style --margin "1" --foreground 7 --italic "RSA-PSS: Probabilistic Signature Scheme variant of RSA"
     gum style --margin "1" --foreground 7 --italic "EdDSA (Ed25519): Modern algorithm, smaller keys, better performance"
-    gum style --margin "1" --foreground 7 --italic "ECDSA (prime256v1): Elliptic curve algorithm, good balance of security and performance"
-    KEY_TYPES=$(gum choose --no-limit --header "Key types (space to select)" "RSA" "EdDSA" "ECDSA")
+    gum style --margin "1" --foreground 7 --italic "ECDSA: Elliptic curve algorithm (P-256, P-384, P-521 curves)"
+    gum style --margin "1" --foreground 7 --italic "HMAC: Symmetric algorithm, requires shared secret"
+    KEY_TYPES=$(gum choose --no-limit --header "Key types (space to select)" "RSA" "RSA-PSS" "EdDSA" "ECDSA" "HMAC")
   else
     # Use default in non-interactive mode (just RSA)
     KEY_TYPES="RSA"
@@ -296,26 +301,46 @@ fi
 #################################################
 # USER INPUT: KEY CONFIGURATION
 #################################################
-if grep -q "JWT Keys" <<< "$OPTIONS" && [[ "$KEY_TYPES" == *"RSA"* ]]; then
+if grep -q "JWT Keys" <<< "$OPTIONS"; then
   # Ask for key size with explanation - Only show the explanation in interactive mode
-  if $INTERACTIVE; then
+  if $INTERACTIVE && [[ "$KEY_TYPES" == *"RSA"* || "$KEY_TYPES" == *"RSA-PSS"* ]]; then
     gum style --margin "1" --foreground 99 "Select the RSA key size:"
     gum style --margin "1" --foreground 7 --italic "The key size determines the security level of your JWT tokens."
     gum style --margin "1" --foreground 7 --italic "Larger keys provide more security but may have performance impact."
     gum style --margin "1" --foreground 7 "2048 bits: Standard security, good performance"
     gum style --margin "1" --foreground 7 "3072 bits: Enhanced security, slightly lower performance"
     gum style --margin "1" --foreground 7 "4096 bits: Maximum security, may impact performance"
+    prompt_or_default "Select RSA key size:" KEY_SIZE
   fi
-  
-  prompt_or_default "Select RSA key size:" KEY_SIZE
+
+  # Ask for HMAC key size
+  if $INTERACTIVE && [[ "$KEY_TYPES" == *"HMAC"* ]]; then
+    gum style --margin "1" --foreground 99 "Select the HMAC key size:"
+    gum style --margin "1" --foreground 7 --italic "The key size determines the security level of your HMAC JWT tokens."
+    gum style --margin "1" --foreground 7 "32 bytes (256 bits): For HS256"
+    gum style --margin "1" --foreground 7 "48 bytes (384 bits): For HS384"
+    gum style --margin "1" --foreground 7 "64 bytes (512 bits): For HS512"
+    prompt_or_default "Select HMAC key size in bytes (32, 48, or 64):" HMAC_KEY_SIZE
+  fi
+
+  # Ask for ECDSA curve if ECDSA is selected
+  if $INTERACTIVE && [[ "$KEY_TYPES" == *"ECDSA"* ]]; then
+    gum style --margin "1" --foreground 99 "Select the ECDSA curve:"
+    gum style --margin "1" --foreground 7 --italic "Different curves offer different security levels and key sizes."
+    gum style --margin "1" --foreground 7 "prime256v1 (P-256): For ES256, 256-bit security"
+    gum style --margin "1" --foreground 7 "secp384r1 (P-384): For ES384, 384-bit security"
+    gum style --margin "1" --foreground 7 "secp521r1 (P-521): For ES512, 521-bit security"
+    ECDSA_CURVE=$(gum choose --header "Select ECDSA curve" "prime256v1" "secp384r1" "secp521r1")
+  else
+    # Default curve in non-interactive mode
+    ECDSA_CURVE="prime256v1"
+  fi
 fi
 
 #################################################
-# PART 1: GENERATE SSL CERTIFICATES
+# USER INPUT: SSL CERTIFICATE DETAILS
 #################################################
 if grep -q "SSL Certificates" <<< "$OPTIONS"; then
-  gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH --align center "$(gum style --foreground 99 'SSL Certificate Generation')"
-  
   if $INTERACTIVE; then
     gum style --margin "1" --foreground 99 "Let's configure your SSL certificate details:"
   fi
@@ -374,6 +399,13 @@ subjectAltName = @alt_names
 [alt_names]
 $DNS_ENTRIES
 EOF"
+fi
+
+#################################################
+# PART 1: GENERATE SSL CERTIFICATES
+#################################################
+if grep -q "SSL Certificates" <<< "$OPTIONS"; then
+  gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH --align center "$(gum style --foreground 99 'SSL Certificate Generation')"
 
   # Step 1: Generate Certificate Authority + Trust Certificate (ca.crt)
   gum spin --spinner line --title "Generating Certificate Authority key and certificate..." -- bash -c "
@@ -450,9 +482,43 @@ if grep -q "JWT Keys" <<< "$OPTIONS"; then
     # Add to JWT info
     JWT_INFO+=$'\n'$(gum style --italic "JWT RSA files generated in '${JWT_DIR}' directory:")
     JWT_INFO+=$'\n'$(gum style "  • Private Key: ${PRIVATE_KEY}")
-    JWT_INFO+=$'\n'$(gum style "    (Keep this secure! Used to sign your JWT tokens)")
+    JWT_INFO+=$'\n'$(gum style "    (Keep this secure! Used to sign your JWT tokens)" | fold -w $((TERMINAL_WIDTH - 4)) -s)
     JWT_INFO+=$'\n'$(gum style "  • Public Key: ${PUBLIC_KEY}")
-    JWT_INFO+=$'\n'$(gum style "    (Share this with services that need to verify JWT tokens)")
+    JWT_INFO+=$'\n'$(gum style "    (Share this with services that need to verify JWT tokens)" | fold -w $((TERMINAL_WIDTH - 4)) -s)
+    JWT_INFO+=$'\n'
+  fi
+
+  # Generate RSA-PSS keys if selected
+  if [[ "$KEY_TYPES" == *"RSA-PSS"* ]]; then
+    # RSA-PSS Key Generation
+    gum style --margin "1" --foreground 99 "Generating RSA-PSS keys for JWT signing..."
+    
+    # Define output file paths
+    PRIVATE_KEY="${JWT_DIR}/rsa_pss_private.pem"
+    PUBLIC_KEY="${JWT_DIR}/rsa_pss_public.pem"
+
+    # Generate RSA-PSS private key
+    gum spin --spinner pulse --title "Generating RSA-PSS private key (${KEY_SIZE} bits)..." -- \
+    openssl genpkey -algorithm RSA-PSS -out "${PRIVATE_KEY}" -pkeyopt rsa_keygen_bits:${KEY_SIZE}
+
+    # Extract public key from the private key
+    gum spin --spinner pulse --title "Extracting public key from private key..." -- \
+    openssl rsa -in "${PRIVATE_KEY}" -pubout -out "${PUBLIC_KEY}"
+
+    # Set appropriate permissions
+    gum spin --spinner pulse --title "Setting appropriate file permissions..." -- bash -c "
+    chmod 600 \"${PRIVATE_KEY}\"  # Restrictive permissions for private key
+    chmod 644 \"${PUBLIC_KEY}\"   # Public key can be readable
+    "
+
+    gum style --margin "1" --foreground 10 "✓ RSA-PSS key generation completed successfully"
+    
+    # Add to JWT info
+    JWT_INFO+=$'\n'$(gum style --italic "JWT RSA-PSS files generated in '${JWT_DIR}' directory:")
+    JWT_INFO+=$'\n'$(gum style "  • Private Key: ${PRIVATE_KEY}")
+    JWT_INFO+=$'\n'$(gum style "    (Keep this secure! Used to sign your JWT tokens)" | fold -w $((TERMINAL_WIDTH - 4)) -s)
+    JWT_INFO+=$'\n'$(gum style "  • Public Key: ${PUBLIC_KEY}")
+    JWT_INFO+=$'\n'$(gum style "    (Share this with services that need to verify JWT tokens)" | fold -w $((TERMINAL_WIDTH - 4)) -s)
     JWT_INFO+=$'\n'
   fi
 
@@ -492,26 +558,46 @@ if grep -q "JWT Keys" <<< "$OPTIONS"; then
     # Add to JWT info
     JWT_INFO+=$'\n'$(gum style --italic "JWT EdDSA files generated in '${JWT_DIR}' directory:")
     JWT_INFO+=$'\n'$(gum style "  • Private Key: ${PRIVATE_KEY}")
-    JWT_INFO+=$'\n'$(gum style "    (Keep this secure! Used to sign your JWT tokens)")
+    JWT_INFO+=$'\n'$(gum style "    (Keep this secure! Used to sign your JWT tokens)" | fold -w $((TERMINAL_WIDTH - 4)) -s)
     JWT_INFO+=$'\n'$(gum style "  • Public Key: ${PUBLIC_KEY}")
-    JWT_INFO+=$'\n'$(gum style "    (Share this with services that need to verify JWT tokens)")
+    JWT_INFO+=$'\n'$(gum style "    (Share this with services that need to verify JWT tokens)" | fold -w $((TERMINAL_WIDTH - 4)) -s)
     JWT_INFO+=$'\n'
     JWT_INFO+=$'\n'$(gum style "Note: Ed25519 keys are much smaller than RSA keys while providing")
-    JWT_INFO+=$'\n'$(gum style "similar security to RSA keys of 3000+ bits.")
+    JWT_INFO+=$'\n'$(gum style "similar security to RSA keys of 3000+ bits." | fold -w $((TERMINAL_WIDTH - 4)) -s)
   fi
 
   # Generate ECDSA keys if selected
   if [[ "$KEY_TYPES" == *"ECDSA"* ]]; then
     # ECDSA Key Generation
-    gum style --margin "1" --foreground 99 "Generating ECDSA (prime256v1) keys for JWT signing..."
+    gum style --margin "1" --foreground 99 "Generating ECDSA ($ECDSA_CURVE) keys for JWT signing..."
     
-    # Define output file paths
-    PRIVATE_KEY="${JWT_DIR}/ec256_private.pem"
-    PUBLIC_KEY="${JWT_DIR}/ec256_public.pem"
+    # Determine the output file names based on curve
+    case "$ECDSA_CURVE" in
+      "prime256v1")
+        PRIVATE_KEY="${JWT_DIR}/ec256_private.pem"
+        PUBLIC_KEY="${JWT_DIR}/ec256_public.pem"
+        ALG_NAME="ES256"
+        ;;
+      "secp384r1")
+        PRIVATE_KEY="${JWT_DIR}/ec384_private.pem"
+        PUBLIC_KEY="${JWT_DIR}/ec384_public.pem"
+        ALG_NAME="ES384"
+        ;;
+      "secp521r1")
+        PRIVATE_KEY="${JWT_DIR}/ec521_private.pem"
+        PUBLIC_KEY="${JWT_DIR}/ec521_public.pem"
+        ALG_NAME="ES512"
+        ;;
+      *)
+        PRIVATE_KEY="${JWT_DIR}/ec_private.pem"
+        PUBLIC_KEY="${JWT_DIR}/ec_public.pem"
+        ALG_NAME="ECDSA"
+        ;;
+    esac
 
     # Generate ECDSA private key
-    gum spin --spinner pulse --title "Generating ECDSA private key (prime256v1 curve)..." -- \
-    openssl ecparam -name prime256v1 -genkey -noout -out "${PRIVATE_KEY}"
+    gum spin --spinner pulse --title "Generating ECDSA private key ($ECDSA_CURVE curve)..." -- \
+    openssl ecparam -name "$ECDSA_CURVE" -genkey -noout -out "${PRIVATE_KEY}"
 
     # Extract public key from the private key
     gum spin --spinner pulse --title "Extracting public key from private key..." -- \
@@ -528,12 +614,46 @@ if grep -q "JWT Keys" <<< "$OPTIONS"; then
     # Add to JWT info
     JWT_INFO+=$'\n'$(gum style --italic "JWT ECDSA files generated in '${JWT_DIR}' directory:")
     JWT_INFO+=$'\n'$(gum style "  • Private Key: ${PRIVATE_KEY}")
-    JWT_INFO+=$'\n'$(gum style "    (Keep this secure! Used to sign your JWT tokens)")
+    JWT_INFO+=$'\n'$(gum style "    (Keep this secure! Used to sign your JWT tokens)" | fold -w $((TERMINAL_WIDTH - 4)) -s)
     JWT_INFO+=$'\n'$(gum style "  • Public Key: ${PUBLIC_KEY}")
-    JWT_INFO+=$'\n'$(gum style "    (Share this with services that need to verify JWT tokens)")
+    JWT_INFO+=$'\n'$(gum style "    (Share this with services that need to verify JWT tokens)" | fold -w $((TERMINAL_WIDTH - 4)) -s)
     JWT_INFO+=$'\n'
-    JWT_INFO+=$'\n'$(gum style "Note: ECDSA (prime256v1) provides good security with smaller key sizes")
-    JWT_INFO+=$'\n'$(gum style "compared to RSA, while being widely supported.")
+    JWT_INFO+=$'\n'$(gum style "Algorithm: $ALG_NAME")
+    JWT_INFO+=$'\n'$(gum style "Curve: $ECDSA_CURVE")
+  fi
+
+  # Generate HMAC key if selected
+  if [[ "$KEY_TYPES" == *"HMAC"* ]]; then
+    # HMAC Key Generation
+    gum style --margin "1" --foreground 99 "Generating HMAC key for JWT signing..."
+    
+    # Define output file path
+    HMAC_KEY_FILE="${JWT_DIR}/hmac.key"
+
+    # Generate random bytes for HMAC key
+    gum spin --spinner pulse --title "Generating HMAC key (${HMAC_KEY_SIZE} bytes)..." -- \
+    openssl rand -out "${HMAC_KEY_FILE}" "${HMAC_KEY_SIZE}"
+
+    # Set appropriate permissions
+    gum spin --spinner pulse --title "Setting appropriate file permissions..." -- \
+    chmod 600 "${HMAC_KEY_FILE}"
+
+    # Determine algorithm based on key size
+    case "${HMAC_KEY_SIZE}" in
+      32) ALG="HS256" ;;
+      48) ALG="HS384" ;;
+      64) ALG="HS512" ;;
+      *) ALG="HMAC" ;;
+    esac
+
+    gum style --margin "1" --foreground 10 "✓ HMAC key generation completed successfully"
+    
+    # Add to JWT info
+    JWT_INFO+=$'\n'$(gum style --italic "JWT HMAC files generated in '${JWT_DIR}' directory:")
+    JWT_INFO+=$'\n'$(gum style "  • HMAC Key: ${HMAC_KEY_FILE}")
+    JWT_INFO+=$'\n'$(gum style "    (Keep this secure! Used to sign and verify your JWT tokens)" | fold -w $((TERMINAL_WIDTH - 4)) -s)
+    JWT_INFO+=$'\n'$(gum style "Algorithm: $ALG")
+    JWT_INFO+=$'\n'$(gum style "Key Size: ${HMAC_KEY_SIZE} bytes (${HMAC_KEY_SIZE} * 8 = $((HMAC_KEY_SIZE * 8)) bits)")
   fi
 
   gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$JWT_INFO"
