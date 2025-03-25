@@ -5,8 +5,11 @@
 **Sigil** is a powerful and user-friendly command-line tool designed to simplify the generation of:
 
 1. **Self-signed SSL certificates** for securing gRPC communications
-2. **RSA keys** for signing and verifying JWT tokens
-3. **EdDSA (Ed25519) keys** for modern JWT token signing
+2. **Asymmetric keys** for signing and verifying JWT tokens:
+   - RSA keys
+   - RSA-PSS keys
+   - EdDSA (Ed25519) keys
+   - ECDSA keys (P-256, P-384, P-521 curves)
 
 This tool is perfect for developers who need to quickly set up secure communication channels or implement JWT-based authentication in their applications. With an intuitive interface powered by [Gum CLI](https://github.com/charmbracelet/gum), Sigil makes certificate and key generation a breeze.
 
@@ -24,22 +27,32 @@ This tool is perfect for developers who need to quickly set up secure communicat
   - **RSA Keys**:
     - Generate RSA private and public keys for JWT token signing
     - Choose key sizes (2048, 3072, or 4096 bits) for security and performance trade-offs
+  - **RSA-PSS Keys**:
+    - Generate RSA-PSS keys (probabilistic signature scheme variant of RSA)
   - **EdDSA (Ed25519) Keys**:
     - Generate modern Ed25519 keys for JWT signing
     - Smaller keys with better performance than RSA
     - Similar security to 3000+ bit RSA keys
+  - **ECDSA Keys**:
+    - Generate ECDSA keys using prime256v1 (P-256), secp384r1 (P-384), or secp521r1 (P-521) curves
+    - Support for ES256, ES384, and ES512 algorithms
   - Set appropriate file permissions for security
 
 - **Interactive Interface**:
   - Powered by Gum CLI for a delightful user experience
   - Guided prompts for configuring certificates and keys
   - Real-time feedback and progress indicators
-  - Option to generate both RSA and EdDSA keys simultaneously
+  - Option to generate multiple key types simultaneously
+
+- **Configuration Management**:
+  - Save default settings for future use
+  - Load configurations from file
+  - Support for both interactive and non-interactive modes
 
 - **Cross-Platform Support**:
   - Works on Linux, macOS, and other Unix-like systems
   - Automatically detects and installs dependencies
-  - Checks for OpenSSL version compatibility with Ed25519
+  - Checks for OpenSSL version compatibility with modern algorithms
 
 ---
 
@@ -47,7 +60,7 @@ This tool is perfect for developers who need to quickly set up secure communicat
 
 Before using Sigil, ensure the following dependencies are installed:
 
-1. **OpenSSL** (version 1.1.1 or later for Ed25519 support):
+1. **OpenSSL** (version 1.1.1 or later for Ed25519 and modern ECDSA support):
    - Required for generating SSL certificates and keys
    - Install on Ubuntu/Debian:
 
@@ -129,13 +142,19 @@ If the above methods don't work, you can manually download and install Sigil:
 
 ## Usage
 
-### Running Sigil
-
-To start using Sigil, simply run the following command:
+### Basic Usage
 
 ```bash
-sigil
+sigil [options]
 ```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-i`   | Run in interactive mode |
+| `-c FILE` | Use specific config file |
+| `-h`   | Show help message |
 
 ### Step-by-Step Guide
 
@@ -195,33 +214,6 @@ sigil
 
 ---
 
-## File Structure
-
-### SSL Certificates
-
-If you generate SSL certificates, the following files will be created in the specified directory (default: `ssl`):
-
-- `ca.key`: Certificate Authority private key (keep secure).
-- `ca.crt`: Certificate Authority trust certificate.
-- `server.key`: Server private key (password protected).
-- `server.csr`: Server certificate signing request.
-- `server.crt`: Server certificate signed by the CA.
-- `server.pem`: Server private key in PEM format for gRPC.
-
-### JWT Keys
-
-If you generate JWT keys, the following files will be created in the specified directory (default: `keys`):
-
-- **RSA Keys**:
-  - `rsa_private.pem`: Private key for signing JWT tokens (keep secure)
-  - `rsa_public.pem`: Public key for verifying JWT tokens
-
-- **EdDSA Keys**:
-  - `ed25519_private.pem`: Ed25519 private key for signing JWT tokens (keep secure)
-  - `ed25519_public.pem`: Ed25519 public key for verifying JWT tokens
-
----
-
 ## Advanced Usage
 
 ### Interactive Mode
@@ -233,6 +225,28 @@ sigil -i
 ```
 
 This will ask users for values for all prompts.
+
+## Configuration
+
+### Default Configuration File
+
+Sigil can save your preferences in `~/.config/sigil/sigil.defaults.conf`
+
+### Configuration Options
+
+```ini
+SSL_DIR="ssl"                  # Directory for SSL files
+SERVER_CN="localhost"          # Server Common Name
+COUNTRY="US"                   # 2-letter country code
+STATE="California"             # State or province
+LOCALITY="San Francisco"       # City
+ORGANIZATION="My Company Inc." # Organization name
+JWT_DIR="keys"                 # Directory for JWT keys
+KEY_SIZE="2048"                # RSA key size (2048, 3072, 4096)
+KEY_TYPE="RSA"                 # Key types (RSA, RSA-PSS, EdDSA, ECDSA)
+ADDITIONAL_DNS=""              # Additional DNS names for SSL certs
+ECDSA_CURVE="prime256v1"       # ECDSA curve (prime256v1, secp384r1, secp521r1)
+```
 
 ### Custom Configuration File
 
@@ -257,25 +271,76 @@ KEY_TYPE="RSA"  # or "EdDSA" or "RSA,EdDSA"
 ADDITIONAL_DNS="example.com,api.example.com"
 ```
 
-### Non-Interactive Mode
+---
 
-For automated scripts, you can use Sigil non-interactively by providing all configuration in a file:
+## File Structure
 
-```bash
-sigil -c /path/to/config.conf
-```
+### SSL Certificates (default: `ssl/`)
+
+| File | Description |
+|------|-------------|
+| `ca.key` | CA private key (keep secure) |
+| `ca.crt` | CA certificate |
+| `server.key` | Server private key |
+| `server.csr` | Certificate signing request |
+| `server.crt` | Server certificate |
+| `server.pem` | Server key in PEM format |
+
+### JWT Keys (default: `keys/`)
+
+| Key Type | Private Key | Public Key |
+|----------|-------------|------------|
+| RSA | `rsa_private.pem` | `rsa_public.pem` |
+| RSA-PSS | `rsa_pss_private.pem` | `rsa_pss_public.pem` |
+| EdDSA | `ed25519_private.pem` | `ed25519_public.pem` |
+| ECDSA | `ec{256,384,521}_private.pem` | `ec{256,384,521}_public.pem` |
 
 ---
 
 ## Key Type Comparison
 
-| Feature          | RSA Keys                  | EdDSA (Ed25519) Keys       |
-|------------------|--------------------------|---------------------------|
-| Key Size         | 2048-4096 bits           | 256 bits                 |
-| Performance      | Slower signing/verifying | Faster operations        |
-| Security         | Good (2048-bit)          | Excellent (≈3000-bit RSA)|
-| Compatibility    | Widely supported         | Modern systems only      |
-| Recommended Use  | Legacy systems           | New development          |
+| Feature          | RSA       | RSA-PSS   | EdDSA (Ed25519) | ECDSA (P-256) |
+|------------------|-----------|-----------|-----------------|---------------|
+| Key Size         | 2048-4096 | 2048-4096 | 256 bits        | 256 bits      |
+| Performance      | Moderate  | Moderate  | Fastest         | Fast          |
+| Security         | Good      | Better    | Excellent       | Excellent     |
+| Compatibility    | Excellent | Good      | Modern systems  | Widely supported |
+| JWT Algorithms   | RS256, RS384, RS512 | PS256, PS384, PS512 | EdDSA | ES256, ES384, ES512 |
+
+---
+
+## Best Practices
+
+1. **Key Security**:
+   - Always keep private keys secure (600 permissions)
+   - Never commit private keys to version control
+   - Consider using a secrets management system for production
+
+2. **Certificate Lifespan**:
+   - Default certificates are valid for 10 years (3650 days)
+   - For production, consider shorter validity periods (90-365 days)
+
+3. **Key Rotation**:
+   - Regularly rotate your JWT signing keys
+   - Have a key rotation strategy in place
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+1. **OpenSSL version too old**:
+   - Error: "Your OpenSSL version doesn't support Ed25519"
+   - Solution: Upgrade OpenSSL to version 1.1.1 or later
+
+2. **Permission denied**:
+   - Error: When trying to write to directories
+   - Solution: Ensure you have write permissions or run with `sudo`
+
+3. **Gum CLI not found**:
+   - Error: "Gum CLI is not installed"
+   - Solution: Install Gum CLI or use non-interactive mode with config file
 
 ---
 
@@ -292,9 +357,11 @@ sigil -c /path/to/config.conf
 
 Contributions to Sigil are welcome! If you'd like to contribute, please follow these steps:
 
-1. Fork the repository: [https://github.com/gourdian25/sigil](https://github.com/gourdian25/sigil)
-2. Create a new branch for your feature or bugfix
-3. Submit a pull request with a detailed description of your changes
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ---
 
