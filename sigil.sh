@@ -416,6 +416,13 @@ if grep -q "SSL Certificates" <<< "$OPTIONS"; then
   gum spin --spinner line --title "Converting server certificate to PEM format for gRPC..." -- \
   openssl pkcs8 -topk8 -nocrypt -passin pass:1111 -in "${SSL_DIR}/server.key" -out "${SSL_DIR}/server.pem"
 
+  # Set secure permissions for all SSL private key files
+  gum spin --spinner pulse --title "Setting secure permissions for SSL files..." -- bash -c "
+  chmod 600 \"${SSL_DIR}/ca.key\"
+  chmod 600 \"${SSL_DIR}/server.key\"
+  chmod 600 \"${SSL_DIR}/server.pem\"
+  "
+
   gum style --margin "1" --foreground 10 "✓ SSL certificate generation completed successfully"
   
   # Show SSL files information in a full-width box
