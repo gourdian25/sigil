@@ -2,6 +2,7 @@
 # Sigil - A powerful tool for generating:
 # 1. Self-signed SSL certificates for gRPC
 # 2. RSA keys for JWT token signing
+# 3. EdDSA (Ed25519) keys for JWT token signing
 #
 # Written by: https://github.com/gourdian25
 # Inspired by:
@@ -50,6 +51,7 @@ INTERNAL_DEFAULTS=(
   ["ORGANIZATION"]="My Company Inc."
   ["JWT_DIR"]="keys"
   ["KEY_SIZE"]="2048"
+  ["KEY_TYPE"]="RSA"  # Added default key type
   ["ADDITIONAL_DNS"]=""
 )
 
@@ -238,7 +240,7 @@ TERMINAL_WIDTH=$(( $(tput cols) - 4 ))
 #################################################
 # Welcome message with thick border and full-width layout
 WELCOME_MSG=$(gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --align center "Welcome to $(gum style --foreground 212 'Sigil')
-Your go-to tool for generating SSL certificates and JWT RSA keys with ease.")
+Your go-to tool for generating SSL certificates and JWT (RSA/EdDSA) keys with ease.")
 
 # Display the welcome message
 echo -e "\n$WELCOME_MSG\n"
@@ -252,7 +254,7 @@ fi
 # USER INPUT: SELECT WHAT TO GENERATE
 #################################################
 gum style --margin "1" --foreground 99 "Please select what you would like to generate:"
-OPTIONS=$(gum choose --no-limit --header "What would you like to generate?" "SSL Certificates" "JWT RSA Keys")
+OPTIONS=$(gum choose --no-limit --header "What would you like to generate?" "SSL Certificates" "JWT Keys")
 
 #################################################
 # USER INPUT: DIRECTORY SELECTION
@@ -269,12 +271,40 @@ if grep -q "SSL Certificates" <<< "$OPTIONS"; then
   show_info "This should match your server's hostname or domain name."
 fi
 
-if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
-  prompt_or_default "Where do you want to store the JWT RSA keys?" JWT_DIR
+if grep -q "JWT Keys" <<< "$OPTIONS"; then
+  prompt_or_default "Where do you want to store the JWT keys?" JWT_DIR
   show_info "This directory will contain the private and public keys for JWT token signing."
   
   # Create the JWT directory if it doesn't exist
   gum spin --spinner dot --title "Creating JWT directory..." -- mkdir -p "${JWT_DIR}"
+
+  # Ask for key type (RSA or EdDSA)
+  if $INTERACTIVE; then
+    gum style --margin "1" --foreground 99 "Select the type of JWT keys to generate:"
+    gum style --margin "1" --foreground 7 --italic "RSA: Traditional algorithm, widely supported, larger keys"
+    gum style --margin "1" --foreground 7 --italic "EdDSA (Ed25519): Modern algorithm, smaller keys, better performance"
+    KEY_TYPE=$(gum choose --header "Key type" "RSA" "EdDSA")
+  else
+    # Use default in non-interactive mode
+    KEY_TYPE="${INTERNAL_DEFAULTS[KEY_TYPE]}"
+  fi
+fi
+
+#################################################
+# USER INPUT: KEY CONFIGURATION
+#################################################
+if grep -q "JWT Keys" <<< "$OPTIONS" && [ "$KEY_TYPE" = "RSA" ]; then
+  # Ask for key size with explanation - Only show the explanation in interactive mode
+  if $INTERACTIVE; then
+    gum style --margin "1" --foreground 99 "Select the RSA key size:"
+    gum style --margin "1" --foreground 7 --italic "The key size determines the security level of your JWT tokens."
+    gum style --margin "1" --foreground 7 --italic "Larger keys provide more security but may have performance impact."
+    gum style --margin "1" --foreground 7 "2048 bits: Standard security, good performance"
+    gum style --margin "1" --foreground 7 "3072 bits: Enhanced security, slightly lower performance"
+    gum style --margin "1" --foreground 7 "4096 bits: Maximum security, may impact performance"
+  fi
+  
+  prompt_or_default "Select RSA key size:" KEY_SIZE
 fi
 
 #################################################
@@ -382,51 +412,89 @@ EOF"
 fi
 
 #################################################
-# PART 2: GENERATE RSA KEYS FOR JWT
+# PART 2: GENERATE JWT KEYS
 #################################################
-if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
-  gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH --align center "$(gum style --foreground 99 'JWT RSA Key Generation')"
+if grep -q "JWT Keys" <<< "$OPTIONS"; then
+  gum style --margin "1" --border thick --padding "1 2" --border-foreground 99 --width $TERMINAL_WIDTH --align center "$(gum style --foreground 99 'JWT Key Generation')"
 
-  # Define output file paths
-  RSA_PRIVATE_KEY="${JWT_DIR}/rsa_private.pem"
-  RSA_PUBLIC_KEY="${JWT_DIR}/rsa_public.pem"
+  if [ "$KEY_TYPE" = "RSA" ]; then
+    # RSA Key Generation
+    gum style --margin "1" --foreground 99 "Generating RSA keys for JWT signing..."
+    
+    # Define output file paths
+    PRIVATE_KEY="${JWT_DIR}/rsa_private.pem"
+    PUBLIC_KEY="${JWT_DIR}/rsa_public.pem"
 
-  # Ask for key size with explanation - Only show the explanation in interactive mode
-  if $INTERACTIVE; then
-    gum style --margin "1" --foreground 99 "Select the RSA key size:"
-    gum style --margin "1" --foreground 7 --italic "The key size determines the security level of your JWT tokens."
-    gum style --margin "1" --foreground 7 --italic "Larger keys provide more security but may have performance impact."
-    gum style --margin "1" --foreground 7 "2048 bits: Standard security, good performance"
-    gum style --margin "1" --foreground 7 "3072 bits: Enhanced security, slightly lower performance"
-    gum style --margin "1" --foreground 7 "4096 bits: Maximum security, may impact performance"
+    # Generate RSA private key
+    gum spin --spinner pulse --title "Generating RSA private key (${KEY_SIZE} bits)..." -- \
+    openssl genpkey -algorithm RSA -out "${PRIVATE_KEY}" -pkeyopt rsa_keygen_bits:${KEY_SIZE}
+
+    # Extract public key from the private key
+    gum spin --spinner pulse --title "Extracting public key from private key..." -- \
+    openssl rsa -in "${PRIVATE_KEY}" -pubout -out "${PUBLIC_KEY}"
+
+    # Set appropriate permissions
+    gum spin --spinner pulse --title "Setting appropriate file permissions..." -- bash -c "
+    chmod 600 \"${PRIVATE_KEY}\"  # Restrictive permissions for private key
+    chmod 644 \"${PUBLIC_KEY}\"   # Public key can be readable
+    "
+
+    gum style --margin "1" --foreground 10 "✓ RSA key generation completed successfully"
+    
+    # Show JWT files information in a full-width box
+    JWT_INFO=$(
+      gum style --italic "JWT RSA files generated in '${JWT_DIR}' directory:"
+      gum style "  • Private Key: ${PRIVATE_KEY}"
+      gum style "    (Keep this secure! Used to sign your JWT tokens)"
+      gum style "  • Public Key: ${PUBLIC_KEY}"
+      gum style "    (Share this with services that need to verify JWT tokens)"
+    )
+    
+  elif [ "$KEY_TYPE" = "EdDSA" ]; then
+    # EdDSA Key Generation
+    gum style --margin "1" --foreground 99 "Generating EdDSA (Ed25519) keys for JWT signing..."
+    
+    # Define output file paths
+    PRIVATE_KEY="${JWT_DIR}/ed25519_private.pem"
+    PUBLIC_KEY="${JWT_DIR}/ed25519_public.pem"
+
+    # Check if OpenSSL version supports Ed25519
+    OPENSSL_VERSION=$(openssl version | awk '{print $2}')
+    if [[ "$OPENSSL_VERSION" < "1.1.1" ]]; then
+      gum style --margin "1" --foreground 9 "Error: Your OpenSSL version ($OPENSSL_VERSION) doesn't support Ed25519."
+      gum style --margin "1" --foreground 9 "Please upgrade to OpenSSL 1.1.1 or later."
+      exit 1
+    fi
+
+    # Generate Ed25519 private key
+    gum spin --spinner pulse --title "Generating Ed25519 private key..." -- \
+    openssl genpkey -algorithm ED25519 -out "${PRIVATE_KEY}"
+
+    # Extract public key from the private key
+    gum spin --spinner pulse --title "Extracting public key from private key..." -- \
+    openssl pkey -in "${PRIVATE_KEY}" -pubout -out "${PUBLIC_KEY}"
+
+    # Set appropriate permissions
+    gum spin --spinner pulse --title "Setting appropriate file permissions..." -- bash -c "
+    chmod 600 \"${PRIVATE_KEY}\"  # Restrictive permissions for private key
+    chmod 644 \"${PUBLIC_KEY}\"   # Public key can be readable
+    "
+
+    gum style --margin "1" --foreground 10 "✓ EdDSA key generation completed successfully"
+    
+    # Show JWT files information in a full-width box
+    JWT_INFO=$(
+      gum style --italic "JWT EdDSA files generated in '${JWT_DIR}' directory:"
+      gum style "  • Private Key: ${PRIVATE_KEY}"
+      gum style "    (Keep this secure! Used to sign your JWT tokens)"
+      gum style "  • Public Key: ${PUBLIC_KEY}"
+      gum style "    (Share this with services that need to verify JWT tokens)"
+      gum style ""
+      gum style "Note: Ed25519 keys are much smaller than RSA keys while providing"
+      gum style "similar security to RSA keys of 3000+ bits."
+    )
   fi
-  
-  prompt_or_default "Select RSA key size:" KEY_SIZE
 
-  # Generate RSA private key
-  gum spin --spinner pulse --title "Generating RSA private key (${KEY_SIZE} bits)..." -- \
-  openssl genpkey -algorithm RSA -out "${RSA_PRIVATE_KEY}" -pkeyopt rsa_keygen_bits:${KEY_SIZE}
-
-  # Extract public key from the private key
-  gum spin --spinner pulse --title "Extracting public key from private key..." -- \
-  openssl rsa -in "${RSA_PRIVATE_KEY}" -pubout -out "${RSA_PUBLIC_KEY}"
-
-  # Set appropriate permissions
-  gum spin --spinner pulse --title "Setting appropriate file permissions..." -- bash -c "
-  chmod 600 \"${RSA_PRIVATE_KEY}\"  # Restrictive permissions for private key
-  chmod 644 \"${RSA_PUBLIC_KEY}\"   # Public key can be readable
-  "
-
-  gum style --margin "1" --foreground 10 "✓ JWT RSA key generation completed successfully"
-  
-  # Show JWT files information in a full-width box
-  JWT_INFO=$(
-    gum style --italic "JWT RSA files generated in '${JWT_DIR}' directory:"
-    gum style "  • Private Key: ${RSA_PRIVATE_KEY}"
-    gum style "    (Keep this secure! Used to sign your JWT tokens)"
-    gum style "  • Public Key: ${RSA_PUBLIC_KEY}"
-    gum style "    (Share this with services that need to verify JWT tokens)"
-  )
   gum style --margin "1" --border thick --padding "1 2" --border-foreground 212 --width $TERMINAL_WIDTH --foreground 212 "$JWT_INFO"
 fi
 
@@ -454,6 +522,7 @@ LOCALITY="$LOCALITY"
 ORGANIZATION="$ORGANIZATION"
 JWT_DIR="$JWT_DIR"
 KEY_SIZE="$KEY_SIZE"
+KEY_TYPE="$KEY_TYPE"
 ADDITIONAL_DNS="$ADDITIONAL_DNS"
 EOF
     
@@ -480,17 +549,24 @@ if grep -q "SSL Certificates" <<< "$OPTIONS"; then
 fi
 
 # Add separator if both were generated
-if grep -q "SSL Certificates" <<< "$OPTIONS" && grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
+if grep -q "SSL Certificates" <<< "$OPTIONS" && grep -q "JWT Keys" <<< "$OPTIONS"; then
   echo "" >> "$TEMP_SUMMARY_FILE"
   echo "" >> "$TEMP_SUMMARY_FILE"
 fi
 
 # Add JWT summary if JWT was generated
-if grep -q "JWT RSA Keys" <<< "$OPTIONS"; then
-  echo "$(gum style --foreground 99 --align center "JWT Token Signing")" >> "$TEMP_SUMMARY_FILE"
-  echo "" >> "$TEMP_SUMMARY_FILE"
-  echo "$(gum style "• Private Key Path: \"${RSA_PRIVATE_KEY}\"")" >> "$TEMP_SUMMARY_FILE"
-  echo "$(gum style "• Public Key Path: \"${RSA_PUBLIC_KEY}\"")" >> "$TEMP_SUMMARY_FILE"
+if grep -q "JWT Keys" <<< "$OPTIONS"; then
+  if [ "$KEY_TYPE" = "RSA" ]; then
+    echo "$(gum style --foreground 99 --align center "JWT RSA Keys")" >> "$TEMP_SUMMARY_FILE"
+    echo "" >> "$TEMP_SUMMARY_FILE"
+    echo "$(gum style "• Private Key Path: \"${JWT_DIR}/rsa_private.pem\"")" >> "$TEMP_SUMMARY_FILE"
+    echo "$(gum style "• Public Key Path: \"${JWT_DIR}/rsa_public.pem\"")" >> "$TEMP_SUMMARY_FILE"
+  elif [ "$KEY_TYPE" = "EdDSA" ]; then
+    echo "$(gum style --foreground 99 --align center "JWT EdDSA Keys")" >> "$TEMP_SUMMARY_FILE"
+    echo "" >> "$TEMP_SUMMARY_FILE"
+    echo "$(gum style "• Private Key Path: \"${JWT_DIR}/ed25519_private.pem\"")" >> "$TEMP_SUMMARY_FILE"
+    echo "$(gum style "• Public Key Path: \"${JWT_DIR}/ed25519_public.pem\"")" >> "$TEMP_SUMMARY_FILE"
+  fi
 fi
 
 # Display the final summary in a full-width box with thick border using the content from the temp file
